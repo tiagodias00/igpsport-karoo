@@ -82,6 +82,10 @@ class LightSessionTest {
     private val vs1200sOutputOff = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF FF FF FF FF FF FF FF FF 5B")
     private val vs1200sRunTime240 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF F0 00 00 00 FF FF FF FF 38")
     private val vs1200sAutoBrightness97 = Hex.decode("03 6B 07 FF 01 FF FF 61 FF FF FF FF FF FF FF FF FF FF FF 55")
+    // Captured from the real VS1200S in AUTO on HIGH (docs/vs1200s-findings.md): run time alternating between
+    // full (155 min) and dimmed (235 min) as auto light dims the output.
+    private val vs1200sRunTime155 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF 9B 00 00 00 FF FF FF FF 36")
+    private val vs1200sRunTime235 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF EB 00 00 00 FF FF FF FF 83")
 
     /** A mode state frame like the light's own (only the header CRC is computed). */
     private fun stateMode(mode: Int): ByteArray {
@@ -398,6 +402,19 @@ class LightSessionTest {
         report(link, vs1200sRunTime240)
         assertFalse(session.state.value.outputOff)
         assertEquals(240, session.state.value.remainingMinutes)
+    }
+
+    @Test
+    fun `auto dimming is detected from run-time jumps while auto is on`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1)) // AUTO_LIGHT on, HIGH
+        report(link, vs1200sRunTime155)
+        assertFalse(session.state.value.autoDimmed)
+        report(link, vs1200sRunTime235)
+        assertTrue(session.state.value.autoDimmed)
+        report(link, vs1200sRunTime155)
+        assertFalse(session.state.value.autoDimmed)
     }
 
     @Test

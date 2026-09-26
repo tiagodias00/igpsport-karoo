@@ -120,6 +120,29 @@ class FieldUiTest {
     }
 
     @Test
+    fun `auto detail shows DIMMED when the light has dimmed itself`() {
+        val dimmed = FieldUi.from(autoOn.copy(autoDimmed = true)).button(Kind.AUTO)
+        assertEquals("HIGH DIMMED", dimmed.detail)
+        assertEquals("HI DIM", dimmed.shortDetail)
+
+        val notDimmed = FieldUi.from(autoOn.copy(autoDimmed = false)).button(Kind.AUTO)
+        assertEquals("HIGH", notDimmed.detail)
+        assertEquals("HI", notDimmed.shortDetail)
+
+        // Blank while auto is off, even if a stale autoDimmed = true lingers in state.
+        val autoOff = FieldUi.from(high.copy(autoDimmed = true)).button(Kind.AUTO)
+        assertEquals("", autoOff.detail)
+        assertEquals("", autoOff.shortDetail)
+
+        // No mode known yet: no label to suffix, even while dimmed.
+        val unknownMode = FieldUi.from(autoOn.copy(mode = null, autoDimmed = true)).button(Kind.AUTO)
+        assertEquals("", unknownMode.detail)
+        assertEquals("", unknownMode.shortDetail)
+
+        assertEquals("AUTO · HIGH DIMMED", FieldUi.from(autoOn.copy(autoDimmed = true)).headline)
+    }
+
+    @Test
     fun `auto detail is blank while auto is off`() {
         val stale = FieldUi.from(high.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
         assertEquals("", stale.detail)

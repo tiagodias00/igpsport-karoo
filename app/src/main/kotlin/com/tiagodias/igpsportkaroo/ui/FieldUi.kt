@@ -93,22 +93,25 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
         }
 
         /**
-         * AUTO shows the mode auto light is running ("HIGH", "HI" compact) — nothing else. On-device testing
-         * (docs/vs1200s-findings.md) found the light never reliably reports when it switches itself off in
-         * daylight, nor does its brightness % track that; showing either was misleading, so neither is shown
-         * here any more. Blank while auto is off: its reports would be stale.
+         * AUTO shows the mode auto light is running ("HIGH", "HI" compact) — nothing else but, when the light
+         * looks like it dimmed itself, a "DIMMED" / "DIM" suffix ([LightState.autoDimmed], from the run-time
+         * jumps: docs/vs1200s-findings.md). On-device testing found the light never reliably reports when it
+         * switches itself off in daylight, nor does its brightness % track that; showing either was misleading,
+         * so neither is shown here. Blank while auto is off: its reports would be stale.
          */
         private fun auto(state: LightState): Button {
             val on = state.autoLightOn
             val mode = state.mode
+            val label = mode?.let(LightModes::label)
+            val shortLabel = mode?.let(LightModes::shortLabel)
             return Button(
                 kind = Kind.AUTO,
                 label = "AUTO",
-                detail = if (on) mode?.let(LightModes::label).orEmpty() else "",
+                detail = if (on) label?.let { if (state.autoDimmed) "$it DIMMED" else it }.orEmpty() else "",
                 active = state.connected && !state.poweredOff && state.autoLightOn,
                 available = state.smartConfigs.isEmpty() || SmartConfig.AUTO_LIGHT in state.smartConfigs,
                 shortLabel = "AUTO",
-                shortDetail = if (on) mode?.let(LightModes::shortLabel).orEmpty() else "",
+                shortDetail = if (on) shortLabel?.let { if (state.autoDimmed) "$it DIM" else it }.orEmpty() else "",
             )
         }
 
