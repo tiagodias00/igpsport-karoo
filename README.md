@@ -16,8 +16,8 @@ around your ride.
   - **AUTO** turns on the light's own auto-brightness and shows the mode it's running, adding
     "DIMMED" when the light has dimmed itself.
   - **OFF** turns the light off.
-- **Battery and run time**, shown on every control field. A separate "Light battery" field is also
-  available if you just want a plain battery number.
+- **Battery and run time** on the regular and slim fields; the compact field shows battery only.
+  A separate "Light battery" field is also available if you just want a plain battery number.
 - **Auto-reconnect** after the light's motion sleep (or a brief Bluetooth drop), with tap-to-retry
   on the field while it's searching.
 - **An app page** with the same SOLID / FLASH / AUTO / OFF controls, plus switches for the light's
@@ -35,7 +35,8 @@ around your ride.
 ## Compatibility
 
 - **Tested:** Karoo 3, with an iGPSPORT VS1200S.
-- **Probably works:** other iGPSPORT VS/TL lights that use the same BLE protocol (untested).
+- **May work:** other iGPSPORT VS/TL lights that use the same BLE protocol — untested; please
+  open an issue with your model.
 - **Needs** a Karoo OS with extension support: karoo-ext 1.1.9, KOS 1.634.2440 or newer.
 
 ## Install, option A: Hammerhead Companion app (recommended, no cable)
@@ -71,7 +72,7 @@ Long-press the app in the Karoo's extension list → Update. This uses the relea
 ## Tips and troubleshooting
 
 - **A red cross in Sensors:** shake the light — it sleeps when it's been still — then tap Retry.
-- **The field says "Searching… tap to retry":** tap it.
+- **The field says "Searching for light… tap to retry"** (the compact field shows ↻): tap it.
 - **Auto light:** the light never tells the Karoo when it switches itself off in daylight, so the
   field can't show that; a note on the app page explains it instead.
 - **No "turn off with bike computer" switch:** the light's own version of this did not reliably
@@ -95,10 +96,12 @@ Requires JDK 17 and Android SDK 35.
 `tools/probe` has a small Python/BLE tool used to reverse-engineer the light's protocol from a PC;
 see its own `probe.py` for usage.
 
-## Credits
+## Credits / third-party
 
 - Tiago Dias ([github.com/tiagodias00](https://github.com/tiagodias00))
-- Protocol research by [cparfait/Bike-Light-Control](https://github.com/cparfait/Bike-Light-Control) (MIT)
+- The knowledge of the light's BLE protocol comes from
+  [cparfait/Bike-Light-Control](https://github.com/cparfait/Bike-Light-Control) (MIT). This extension is
+  an independent Kotlin reimplementation of that protocol; no code was copied from it.
 - [karoo-ext](https://github.com/hammerheadnav/karoo-ext) by Hammerhead
 
 ## Disclaimer
