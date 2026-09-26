@@ -28,4 +28,22 @@
         description="@string/field_battery_description"
         icon="@drawable/ic_light"
         graphical="false" />
+    <BonusAction
+        actionId="next-mode"
+        displayName="@string/action_next_mode" />
+    <BonusAction
+        actionId="solid"
+        displayName="@string/action_solid" />
+    <BonusAction
+        actionId="flash"
+        displayName="@string/action_flash" />
+    <BonusAction
+        actionId="auto"
+        displayName="@string/action_auto" />
+    <BonusAction
+        actionId="light-off"
+        displayName="@string/action_light_off" />
+    <BonusAction
+        actionId="open-controls"
+        displayName="@string/action_open_controls" />
 </ExtensionInfo>

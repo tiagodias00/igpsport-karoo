@@ -1,5 +1,6 @@
 package com.tiagodias.igpsportkaroo
 
+import android.content.Intent
 import com.tiagodias.igpsportkaroo.automation.Command
 import com.tiagodias.igpsportkaroo.automation.RideAutomation
 import com.tiagodias.igpsportkaroo.ble.BleScanner
@@ -7,6 +8,7 @@ import com.tiagodias.igpsportkaroo.ble.GattLightLink
 import com.tiagodias.igpsportkaroo.ble.ScanMatch
 import com.tiagodias.igpsportkaroo.light.LightHub
 import com.tiagodias.igpsportkaroo.light.LightSession
+import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.ui.CompactLightFieldDataType
 import com.tiagodias.igpsportkaroo.ui.LightBatteryDataType
 import com.tiagodias.igpsportkaroo.ui.LightFieldDataType
@@ -152,6 +154,28 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         }
     }
 
+    /** A hardware button (Karoo "bonus action") mapped in Settings → Controls; ids are in extension_info.xml. */
+    override fun onBonusAction(actionId: String) {
+        if (actionId == ACTION_OPEN_CONTROLS) {
+            Timber.i("Bonus action %s", actionId)
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        val session = LightHub.session
+        val sent = when (actionId) {
+            ACTION_NEXT_MODE -> session?.nextMode()
+            ACTION_SOLID -> session?.selectSolid()
+            ACTION_FLASH -> session?.selectFlash()
+            ACTION_AUTO -> session?.selectAuto()
+            ACTION_LIGHT_OFF -> session?.selectMode(LightModes.OFF)
+            else -> {
+                Timber.w("Unknown bonus action %s", actionId)
+                return
+            }
+        } ?: false
+        Timber.i("Bonus action %s (sent=%b)", actionId, sent)
+    }
+
     /**
      * Runs automation [commands]. Mode changes wait (up to [RIDE_START_WAIT_MS]) for the light to be connected
      * with its modes known: a ride usually starts right after the Karoo boots, before the light has connected.
@@ -221,5 +245,13 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         const val SETTINGS_ACTION = "com.tiagodias.igpsportkaroo.SETTINGS"
         const val CONTROL_ACTION = "com.tiagodias.igpsportkaroo.CONTROL"
         const val RIDE_START_WAIT_MS = 60_000L
+
+        // Bonus action ids: must match extension_info.xml.
+        const val ACTION_NEXT_MODE = "next-mode"
+        const val ACTION_SOLID = "solid"
+        const val ACTION_FLASH = "flash"
+        const val ACTION_AUTO = "auto"
+        const val ACTION_LIGHT_OFF = "light-off"
+        const val ACTION_OPEN_CONTROLS = "open-controls"
     }
 }
