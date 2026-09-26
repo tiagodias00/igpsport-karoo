@@ -1,6 +1,27 @@
+<!--
+    Original icon (not iGPSPORT's): a stylised bike headlight — a rounded lamp housing with an amber lens and
+    3 beam rays, on a dark rounded-square background. Used as the app/launcher icon. The small-scale uses
+    (extension icon, data-field icons, in-ride alert icon) use the transparent, white-only ic_light_glyph
+    instead, since a filled background square doesn't read well at those sizes. Both are drawn from the same
+    shapes; tools/icon/render_icon.py renders the PNG export of this one.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Dark rounded-square background -->
+    <path android:fillColor="#FF1E2A33"
+        android:pathData="M5,0H19A5,5 0 0,1 24,5V19A5,5 0 0,1 19,24H5A5,5 0 0,1 0,19V5A5,5 0 0,1 5,0Z" />
+    <!-- Lamp housing -->
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M9,21c0,0.55 0.45,1 1,1h4c0.55,0 1,-0.45 1,-1v-1L9,20v1zM12,2C8.14,2 5,5.14 5,9c0,2.38 1.19,4.47 3,5.74L8,17c0,0.55 0.45,1 1,1h6c0.55,0 1,-0.45 1,-1v-2.26c1.81,-1.27 3,-3.36 3,-5.74 0,-3.86 -3.14,-7 -7,-7z" />
+        android:pathData="M6.6,8H11.4A1.6,1.6 0 0,1 13,9.6V14.4A1.6,1.6 0 0,1 11.4,16H6.6A1.6,1.6 0 0,1 5,14.4V9.6A1.6,1.6 0 0,1 6.6,8Z" />
+    <!-- Lens -->
+    <path android:fillColor="#FFFFC107"
+        android:pathData="M7,12A2,2 0 1,0 11,12A2,2 0 1,0 7,12Z" />
+    <!-- Beam rays -->
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFC107" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M13.6,9.4L19,6.6" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFC107" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M14.2,12L20.4,12" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFC107" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M13.6,14.6L19,17.4" />
 </vector>

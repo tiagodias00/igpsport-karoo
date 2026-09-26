@@ -232,7 +232,7 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
                     karooSystem.dispatch(
                         InRideAlert(
                             id = "igps-low-battery",
-                            icon = R.drawable.ic_light,
+                            icon = R.drawable.ic_light_glyph,
                             title = getString(R.string.low_battery_title, command.percent),
                             detail = getString(R.string.low_battery_detail),
                             autoDismissMs = 10_000L,
