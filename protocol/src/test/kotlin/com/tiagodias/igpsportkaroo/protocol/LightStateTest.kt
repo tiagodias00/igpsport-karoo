@@ -52,8 +52,8 @@ class LightStateTest {
         val s = LightState()
             .apply(LightUpdate(mode = 2))
             .apply(LightUpdate(mode = 5))
-            .apply(LightUpdate(mode = 64))
-        assertEquals(64, s.mode)
+            .apply(LightUpdate(mode = 99))
+        assertEquals(99, s.mode)
         assertEquals(2, s.lastSteadyMode)
         assertEquals(5, s.lastFlashMode)
         assertEquals(1, s.apply(LightUpdate(mode = 1)).lastSteadyMode)
@@ -62,10 +62,10 @@ class LightStateTest {
     @Test
     fun `current levels fall back to the first enabled level of each group`() {
         val vs1200s = LightState(declaredModes = linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true, 64 to true))
-        assertEquals(2, vs1200s.steadyLevel)
+        assertEquals(1, vs1200s.steadyLevel) // brightest first
         assertEquals(4, vs1200s.flashLevel)
-        val used = vs1200s.apply(LightUpdate(mode = 1)).apply(LightUpdate(mode = 5)).apply(LightUpdate(mode = 64))
-        assertEquals(1, used.steadyLevel)
+        val used = vs1200s.apply(LightUpdate(mode = 64)).apply(LightUpdate(mode = 5))
+        assertEquals(64, used.steadyLevel)
         assertEquals(5, used.flashLevel)
         assertNull(LightState().steadyLevel)
     }

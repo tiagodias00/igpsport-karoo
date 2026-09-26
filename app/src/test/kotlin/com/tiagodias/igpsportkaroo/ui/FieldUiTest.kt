@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FieldUiTest {
-    /** The VS1200S: MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1 (docs/vs1200s-findings.md). */
+    /** The VS1200S: MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1 = LOW (docs/vs1200s-findings.md). */
     private val vs1200sModes = linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true, 64 to true)
     private val vs1200sConfigs = linkedMapOf(5 to 0, 3 to 0, 9 to 1, 4 to 1, 13 to 1, 15 to 1) // AUTO_LIGHT off
     private val high = LightState(
@@ -47,6 +47,14 @@ class FieldUiTest {
     }
 
     @Test
+    fun `SOLID shows the low custom level as LOW`() {
+        val ui = FieldUi.from(high.apply(LightUpdate(mode = 64)))
+        assertTrue(ui.button(Kind.SOLID).active)
+        assertEquals("LOW", ui.button(Kind.SOLID).detail)
+        assertEquals("SOL LO", ui.button(Kind.SOLID).compactText(maxChars = 8))
+    }
+
+    @Test
     fun `flashing light marks FLASH and SOLID keeps the last steady level`() {
         val ui = FieldUi.from(high.apply(LightUpdate(mode = 5)))
         assertEquals(listOf(false, true, false, false), ui.buttons.map { it.active })
@@ -57,7 +65,7 @@ class FieldUiTest {
     @Test
     fun `SOLID shows the light's first steady level before any was used`() {
         val ui = FieldUi.from(LightState(connected = true, declaredModes = vs1200sModes).apply(LightUpdate(mode = 5)))
-        assertEquals("MID", ui.button(Kind.SOLID).detail)
+        assertEquals("HIGH", ui.button(Kind.SOLID).detail) // brightest first
     }
 
     @Test
@@ -82,7 +90,7 @@ class FieldUiTest {
 
         val steadyOnly = LightState(connected = true, declaredModes = mapOf(1 to true, 2 to true))
         assertEquals(listOf(true, false), FieldUi.from(steadyOnly).buttons.take(2).map { it.available })
-        val flashOnly = LightState(connected = true, declaredModes = mapOf(4 to true, 64 to true))
+        val flashOnly = LightState(connected = true, declaredModes = mapOf(4 to true))
         assertEquals(listOf(false, true), FieldUi.from(flashOnly).buttons.take(2).map { it.available })
 
         val noAuto = LightState(connected = true, smartConfigs = mapOf(SmartConfig.AUTO_SLEEP to SmartConfig.ON))

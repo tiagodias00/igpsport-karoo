@@ -399,17 +399,16 @@ class LightSessionTest {
     fun `solid cycles the steady levels when the light is already steady`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)
-        report(link, vs1200sDeclared, stateMode(2)) // steady levels [2, 1]; auto off (no configs reported)
+        report(link, vs1200sDeclared, stateMode(1)) // steady levels HIGH, MID, LOW (64); auto off (no configs reported)
         link.sent.clear()
         assertTrue(session.selectSolid())
-        assertEquals(1, session.state.value.mode)
-        assertTrue(session.selectSolid())
         assertEquals(2, session.state.value.mode)
+        assertTrue(session.selectSolid())
+        assertEquals(64, session.state.value.mode)
+        assertTrue(session.selectSolid())
+        assertEquals(1, session.state.value.mode)
         assertEquals(
-            listOf(
-                hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode()),
-                hex(IgpsProtocol.setMode(2)), hex(IgpsProtocol.readCurrentMode()),
-            ),
+            listOf(2, 64, 1).flatMap { listOf(hex(IgpsProtocol.setMode(it)), hex(IgpsProtocol.readCurrentMode())) },
             link.sent,
         )
     }
@@ -430,8 +429,8 @@ class LightSessionTest {
         val session = connectedSession(link)
         report(link, vs1200sDeclared, stateMode(5))
         link.sent.clear()
-        assertTrue(session.selectSolid())
-        assertEquals(listOf(hex(IgpsProtocol.setMode(2)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+        assertTrue(session.selectSolid()) // brightest first: HIGH
+        assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
     }
 
     @Test
