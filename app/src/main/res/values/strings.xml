@@ -18,8 +18,21 @@
     <string name="perm_needed">iGPSPORT Light needs Bluetooth permission. Open the app to allow it.</string>
     <string name="perm_granted">Bluetooth permission granted. Pair your light in Sensors → Add sensor.</string>
     <string name="open_settings">Open</string>
-    <string name="settings_ride_start">When a ride starts</string>
-    <string name="ride_start_label">Set light to</string>
+    <string name="retry_connection">Retry connection</string>
+    <string name="section_features">Light features</string>
+    <string name="features_unknown">Connect the light to change its features</string>
+    <string name="feature_auto_light">Auto light</string>
+    <string name="feature_auto_light_subtitle">Adjusts brightness to ambient light; can switch off in daylight</string>
+    <string name="feature_lumen_vary">Speed-based brightness</string>
+    <string name="feature_lumen_vary_subtitle">Brightness follows your speed</string>
+    <string name="feature_auto_sleep">Auto sleep</string>
+    <string name="feature_auto_sleep_subtitle">Sleeps when not moving</string>
+    <string name="feature_auto_low">Auto dim when stopped</string>
+    <string name="feature_auto_lowbat">Low-battery saving</string>
+    <string name="feature_sync_off">Turn off with bike computer</string>
+    <string name="section_ride">Ride</string>
+    <string name="settings_ride_start">When a ride starts, set light to</string>
+    <string name="ride_start_auto">AUTO</string>
     <string name="none">Don\'t change</string>
     <string name="low_battery_alerts" formatted="false">Low battery alerts (20% and 10%)</string>
     <string name="cc_shortcut">Control Center shortcut (experimental)</string>

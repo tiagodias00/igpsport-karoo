@@ -1,0 +1,43 @@
+package com.tiagodias.igpsportkaroo.ui
+
+import com.tiagodias.igpsportkaroo.protocol.SmartConfig
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class SmartFeaturesTest {
+    /** The VS1200S, in the order the light declares them (docs/vs1200s-findings.md). */
+    private val vs1200s = linkedMapOf(5 to 0, 3 to 1, 9 to 1, 4 to 1, 13 to 1, 15 to 1)
+
+    @Test
+    fun `features follow the app page order, not the light's`() {
+        assertEquals(
+            listOf(
+                SmartConfig.AUTO_LIGHT, SmartConfig.LUMEN_VARY, SmartConfig.AUTO_SLEEP,
+                SmartConfig.AUTO_LOW, SmartConfig.AUTO_LOWBAT, SmartConfig.SYNC_OFF,
+            ),
+            SmartFeatures.visible(vs1200s).map { it.id },
+        )
+    }
+
+    @Test
+    fun `only declared features are shown`() {
+        val some = mapOf(SmartConfig.AUTO_SLEEP to 1, SmartConfig.AUTO_LIGHT to 0)
+        assertEquals(listOf(SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP), SmartFeatures.visible(some).map { it.id })
+    }
+
+    @Test
+    fun `unknown configs are hidden`() {
+        assertEquals(listOf(SmartConfig.AUTO_LIGHT), SmartFeatures.visible(mapOf(99 to 1, 3 to 1)).map { it.id })
+        assertEquals(emptyList<SmartFeatures.Feature>(), SmartFeatures.visible(emptyMap()))
+    }
+
+    @Test
+    fun `each feature has its own label and the first three a subtitle`() {
+        val features = SmartFeatures.visible(vs1200s)
+        assertEquals(features.size, features.map { it.label }.toSet().size)
+        features.take(3).forEach { assertNotNull(it.subtitle) }
+        features.drop(3).forEach { assertNull(it.subtitle) }
+    }
+}

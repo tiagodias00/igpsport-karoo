@@ -158,6 +158,19 @@ class FieldUiTest {
     }
 
     @Test
+    fun `headline shows the active button`() {
+        assertEquals("SOLID · HIGH", FieldUi.from(high).headline)
+        assertEquals("AUTO · HIGH 95%", FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).headline)
+        assertEquals("OFF", FieldUi.from(high.copy(poweredOff = true)).headline)
+    }
+
+    @Test
+    fun `headline while searching or before a mode is known`() {
+        assertEquals("Searching for light…", FieldUi.from(LightState(batteryPercent = 78)).headline)
+        assertEquals("Connected", FieldUi.from(LightState(connected = true)).headline)
+    }
+
+    @Test
     fun `compact status shows battery when connected`() {
         assertEquals("78%", FieldUi.from(high).statusShort)
         assertEquals("78%", FieldUi.from(high.copy(poweredOff = true)).statusShort)

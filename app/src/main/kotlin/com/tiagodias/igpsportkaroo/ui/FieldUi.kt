@@ -31,6 +31,14 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
     /** While the light is not connected, tapping the footer forces an immediate reconnect. */
     val reconnectable: Boolean get() = !connected
 
+    /** The app page's status line: the active button ("SOLID · HIGH", "AUTO · HIGH 95%", "OFF") or the search state. */
+    val headline: String
+        get() {
+            if (!connected) return "Searching for light…"
+            val active = buttons.firstOrNull { it.active } ?: return "Connected"
+            return if (active.detail.isEmpty()) active.label else "${active.label} · ${active.detail}"
+        }
+
     companion object {
         fun from(state: LightState): FieldUi {
             val buttons = listOf(solid(state), flash(state), auto(state), off(state))
