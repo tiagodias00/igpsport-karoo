@@ -1,17 +1,30 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="Light Control for iGPSPORT logo" width="120">
+
 # Light Control for iGPSPORT
 
-[![Latest release](https://img.shields.io/github/v/release/tiagodias00/igpsport-karoo)](https://github.com/tiagodias00/igpsport-karoo/releases/latest)
+**Control your iGPSPORT bike light from your Hammerhead Karoo.**
+
+Switch modes with a tap on your ride screen, keep an eye on the light's battery,
+and let the light switch on and off with your rides.
+
+[![Latest release](https://img.shields.io/github/v/release/tiagodias00/igpsport-karoo?label=version)](https://github.com/tiagodias00/igpsport-karoo/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/tiagodias00/igpsport-karoo/total)](https://github.com/tiagodias00/igpsport-karoo/releases)
 [![Build](https://github.com/tiagodias00/igpsport-karoo/actions/workflows/build.yml/badge.svg)](https://github.com/tiagodias00/igpsport-karoo/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Control your **iGPSPORT bike light** from your **Hammerhead Karoo 3**: switch modes with a tap on
-your ride screen, see the light's battery, and let the light switch on and off with your rides.
-It's free, it works offline, and there is nothing to set up on your phone.
+[![Download the latest version](https://img.shields.io/badge/Download-latest%20version-2ea44f?style=for-the-badge)](https://github.com/tiagodias00/igpsport-karoo/releases/latest)
 
-<p align="center">
-  <img src="assets/screenshots/ride-field.png" alt="The light field on a Karoo ride screen" width="420">
-</p>
+[Features](#what-it-does) · [Install](#install) · [Set up](#set-up) · [Good to know](#good-to-know) · [Troubleshooting](#troubleshooting) · [Changelog](CHANGELOG.md)
+
+<img src="assets/screenshots/ride-field.png" alt="The light field on a Karoo ride screen" width="440">
+
+<sub>Free and open source · Works offline · Nothing to set up on your phone</sub>
+
+</div>
+
+---
 
 ## What it does
 
@@ -36,11 +49,9 @@ the light's own button, the field follows.
 Open **Light Control for iGPSPORT** from the Karoo's app list. You get the same four buttons, plus
 the light's own automatic features and your ride settings.
 
-<p align="center">
-  <img src="assets/screenshots/app-controls.png" alt="App page: mode buttons" width="260">
-  <img src="assets/screenshots/app-features.png" alt="App page: light features" width="260">
-  <img src="assets/screenshots/app-ride-settings.png" alt="App page: ride settings" width="260">
-</p>
+| Mode buttons | Light features | Ride settings |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/app-controls.png" alt="App page: mode buttons" width="240"> | <img src="assets/screenshots/app-features.png" alt="App page: light features" width="240"> | <img src="assets/screenshots/app-ride-settings.png" alt="App page: ride settings" width="240"> |
 
 - **Light features:** switch these on or off, and the light remembers them:
   - **Auto light:** brightness follows the daylight; the light may switch itself off in bright sun.
@@ -76,10 +87,12 @@ field your mode shows up as e.g. **C1 20%** under SOLID, or **C1** under FLASH i
 
 ## Good to know
 
-- **OFF means standby, not powered off.** When the Karoo switches the light off, only the beam goes
-  off. The light stays on standby, connected to the Karoo, so it can come back on straight away,
-  for example by itself at the start of your next ride. It won't wake up and switch itself on when
-  you move the bike. Standby uses very little battery: under 1 % in 2 hours in our test.
+> [!IMPORTANT]
+> **OFF from the Karoo means standby, not powered off.** Only the beam goes off. The light stays
+> on standby, connected to the Karoo, so it can come back on straight away, for example by itself
+> at the start of your next ride. It won't wake up and switch itself on when you move the bike.
+> Standby uses very little battery: under 1 % in 2 hours in our test.
+
 - **To power the light off completely,** hold its own button, as usual.
 - **"Turn off the light when the ride ends"** also leaves it on standby. Together with "When a ride
   starts, turn the light on in …", the light switches on automatically when you start your next
@@ -103,7 +116,8 @@ field your mode shows up as e.g. **C1 20%** under SOLID, or **C1** under FLASH i
 
 ## Install
 
-It takes about two minutes, and you don't need a cable or a computer.
+> [!TIP]
+> It takes about two minutes, and you don't need a cable or a computer.
 
 1. Make sure your Karoo is **switched on, on Wi-Fi, and paired** with the Hammerhead Companion app on
    your phone.
