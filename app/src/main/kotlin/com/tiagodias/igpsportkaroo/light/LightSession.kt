@@ -227,12 +227,13 @@ class LightSession(
 
     /**
      * An edit to the playing slot changes its brightness, so its run time moves: the auto-dim reference no longer
-     * means anything, and a fresh one starts. Callers hold [commandLock] and assign the result to `_state.value`.
+     * means anything. The next run-time report (at the new brightness) starts a fresh one; seeding it now would
+     * use the run time from before the edit. Callers hold [commandLock] and assign the result to `_state.value`.
      */
     private fun LightState.afterCustomEdit(mode: Int): LightState {
         if (mode != this.mode) return this
         dimTracker.reset()
-        return withAutoDimmed()
+        return copy(autoDimmed = false)
     }
 
     /** The frames for [changes] to custom slot [mode], or null (logged) if any value is outside the app's ranges. */

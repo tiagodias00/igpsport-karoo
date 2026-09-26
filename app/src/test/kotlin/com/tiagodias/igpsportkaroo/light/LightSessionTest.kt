@@ -1039,6 +1039,17 @@ class LightSessionTest {
     }
 
     @Test
+    fun `lowering the playing custom slot's brightness under auto is not read as dimmed`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, customReplySteady, stateMode(64)) // AUTO_LIGHT on, custom 64
+        report(link, vs1200sRunTime155) // full brightness at the old level
+        assertTrue(session.changeCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 10)))
+        report(link, vs1200sRunTime235) // the dimmer level simply runs longer: a new reference, not "dimmed"
+        assertFalse(session.state.value.autoDimmed)
+    }
+
+    @Test
     fun `editing a custom slot that isn't playing keeps the auto-dim reference`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)
