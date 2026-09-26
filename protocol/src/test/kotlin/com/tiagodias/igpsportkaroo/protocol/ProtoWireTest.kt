@@ -40,4 +40,11 @@ class ProtoWireTest {
         assertNull(ProtoWire.parse(Hex.decode("0D 00 00 00 00"))) // wire type 5 (fixed32)
         assertNull(ProtoWire.parse(Hex.decode("08 FF"))) // unterminated varint
     }
+
+    @Test
+    fun `rejects oversized length fields without throwing`() {
+        assertNull(ProtoWire.parse(Hex.decode("0A FF FF FF FF 07 00"))) // Int.MAX_VALUE: pos + len overflows
+        assertNull(ProtoWire.parse(Hex.decode("0A 85 80 80 80 10 00"))) // 2^32 + 5: truncates to 5 as an Int
+        assertNull(ProtoWire.parse(Hex.decode("0A FF FF FF FF FF FF FF FF FF 01"))) // -1 as a 64-bit varint
+    }
 }

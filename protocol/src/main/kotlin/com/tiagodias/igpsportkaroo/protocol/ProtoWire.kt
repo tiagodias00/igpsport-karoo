@@ -53,8 +53,10 @@ object ProtoWire {
                     result.getOrPut(field) { mutableListOf() }.add(Value.Varint(value))
                 }
                 2 -> {
-                    val len = readVarint()?.toInt() ?: return null
-                    if (len < 0 || pos + len > bytes.size) return null
+                    // Compared as a Long against the bytes left: an Int cast or pos + len could wrap.
+                    val rawLen = readVarint() ?: return null
+                    if (rawLen < 0 || rawLen > bytes.size - pos) return null
+                    val len = rawLen.toInt()
                     result.getOrPut(field) { mutableListOf() }.add(Value.Bytes(bytes.copyOfRange(pos, pos + len)))
                     pos += len
                 }
