@@ -14,11 +14,17 @@ class SmartFeaturesTest {
     fun `features follow the app page order, not the light's`() {
         assertEquals(
             listOf(
-                SmartConfig.AUTO_LIGHT, SmartConfig.LUMEN_VARY, SmartConfig.AUTO_SLEEP,
+                SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP,
                 SmartConfig.AUTO_LOW, SmartConfig.AUTO_LOWBAT, SmartConfig.SYNC_OFF,
             ),
             SmartFeatures.visible(vs1200s).map { it.id },
         )
+    }
+
+    @Test
+    fun `speed-based brightness is not offered`() {
+        // It needs speed from an iGPSPORT computer; on a Karoo it does nothing (user decision, 2026-09-26).
+        assertEquals(emptyList<SmartFeatures.Feature>(), SmartFeatures.visible(mapOf(SmartConfig.LUMEN_VARY to 1)))
     }
 
     @Test
@@ -37,7 +43,7 @@ class SmartFeaturesTest {
     fun `each feature has its own label, and the ones that need explaining a subtitle`() {
         val features = SmartFeatures.visible(vs1200s)
         assertEquals(features.size, features.map { it.label }.toSet().size)
-        val explained = setOf(SmartConfig.AUTO_LIGHT, SmartConfig.LUMEN_VARY, SmartConfig.AUTO_SLEEP, SmartConfig.SYNC_OFF)
+        val explained = setOf(SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP, SmartConfig.SYNC_OFF)
         features.forEach { if (it.id in explained) assertNotNull(it.subtitle) else assertNull(it.subtitle) }
     }
 }
