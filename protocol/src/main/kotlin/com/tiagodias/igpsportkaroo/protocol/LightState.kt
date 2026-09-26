@@ -25,6 +25,12 @@ data class LightState(
      * Like [poweredOff], `apply()` must leave this untouched: it is owned and recomputed by the session.
      */
     val autoDimmed: Boolean = false,
+    /**
+     * True while the app has switched the light's auto sleep ([SmartConfig.AUTO_SLEEP]) off because we switched
+     * the light off: asleep, moving it would wake it lit. Resumed when the light is on again. Like [poweredOff],
+     * `apply()` must leave this untouched: it is owned by the session (and saved across restarts).
+     */
+    val autoSleepPaused: Boolean = false,
 ) {
     /** Modes that can be selected right now (enabled on the light), in the light's order. */
     val enabledModes: List<Int> get() = declaredModes.filterValues { it }.keys.toList()

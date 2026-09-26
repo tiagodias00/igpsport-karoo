@@ -34,6 +34,14 @@ class Settings(context: Context) {
         prefs.edit().putBoolean("last_recording", recording).putLong("last_recording_at", at).apply()
     }
 
+    /**
+     * The light (address) whose auto sleep the app has paused while it is off, null if none. Saved so a restart
+     * or a reboot still switches it back on once the light is on again, instead of leaving it off for good.
+     */
+    var sleepPausedFor: String?
+        get() = prefs.getString("sleep_paused_for", null)
+        set(value) { prefs.edit().putString("sleep_paused_for", value).apply() }
+
     /** The first config ever read for custom slot [mode]: "Restore original" goes back to it (plan decision D3). */
     fun customOriginal(mode: Int): CustomModeConfig? = CustomModeText.decode(prefs.getString("custom_original_$mode", null))
 

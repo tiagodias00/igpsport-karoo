@@ -34,6 +34,13 @@ class LightStateTest {
     }
 
     @Test
+    fun `apply leaves autoSleepPaused alone`() {
+        val s = LightState(connected = true, mode = 1, autoSleepPaused = true)
+            .apply(LightUpdate(mode = 2, smartConfigs = linkedMapOf(SmartConfig.AUTO_SLEEP to SmartConfig.ON)))
+        assertTrue(s.autoSleepPaused)
+    }
+
+    @Test
     fun `apply merges smart configs, aux battery and output off`() {
         val s = LightState(connected = true, mode = 1)
             .apply(LightUpdate(smartConfigs = linkedMapOf(5 to 0, 3 to 1)))

@@ -140,6 +140,15 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
             GattLightLink(applicationContext), address, scope,
             now = { SystemClock.elapsedRealtime() },
             frameLog = frameLog,
+            // Saved per light: after a restart the paused auto sleep is still switched back on, on that light only.
+            sleepPaused = settings.sleepPausedFor == address,
+            onSleepPausedChanged = { paused ->
+                if (paused) {
+                    settings.sleepPausedFor = address
+                } else if (settings.sleepPausedFor == address) {
+                    settings.sleepPausedFor = null
+                }
+            },
         )
         deviceJob?.cancel()
         LightHub.session?.stop()
