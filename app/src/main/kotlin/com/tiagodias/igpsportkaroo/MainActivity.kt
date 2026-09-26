@@ -88,6 +88,16 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        onScreen = true
+    }
+
+    override fun onPause() {
+        onScreen = false
+        super.onPause()
+    }
+
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
@@ -159,7 +169,7 @@ class MainActivity : Activity() {
             },
         )
         content.addView(settingSwitch(R.string.low_battery_alerts, settings.lowBatteryAlerts) { settings.lowBatteryAlerts = it })
-        content.addView(settingSwitch(R.string.cc_shortcut, settings.controlCenterShortcut) { settings.controlCenterShortcut = it })
+        // The Control Center shortcut switch (settings.controlCenterShortcut) is added with the shortcut itself (Task 15).
     }
 
     private fun render(state: LightState) {
@@ -231,9 +241,14 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private companion object {
-        const val REQUEST_PERMISSIONS = 1
-        const val REFRESH_MS = 500L
-        const val DISABLED_ALPHA = 0.4f
+    companion object {
+        /** True while the app page is resumed: the extension checks it after asking Android to open the page. */
+        @Volatile
+        var onScreen = false
+            private set
+
+        private const val REQUEST_PERMISSIONS = 1
+        private const val REFRESH_MS = 500L
+        private const val DISABLED_ALPHA = 0.4f
     }
 }

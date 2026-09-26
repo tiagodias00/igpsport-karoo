@@ -11,15 +11,22 @@ sealed interface Command {
 
 /**
  * Pure ride automation: the ride-start action and the low-battery alerts. [settings] is read on every
- * event, so changes on the app page apply right away. Not thread-safe: call from one thread at a time.
+ * event, so changes on the app page apply right away. Thread-safe: the ride-state consumer and the device
+ * loop call it from different threads.
  */
 class RideAutomation(private val settings: () -> AutomationSettings) {
+    private var primed = false
     private var recording = false
     private val alerted = mutableSetOf<Int>()
 
-    /** On the transition to recording (a new ride, not a resume), the configured ride-start command. */
+    /**
+     * On the transition to recording (a new ride, not a resume), the configured ride-start command. The first
+     * event only records the state: already recording then means the extension restarted mid-ride.
+     */
+    @Synchronized
     fun onRideState(isRecording: Boolean): List<Command> {
-        val started = isRecording && !recording
+        val started = primed && isRecording && !recording
+        primed = true
         recording = isRecording
         if (!started) return emptyList()
         return when (val start = settings().rideStart) {
@@ -30,6 +37,7 @@ class RideAutomation(private val settings: () -> AutomationSettings) {
     }
 
     /** One alert when [percent] first reaches one or more of [THRESHOLDS]; charging above [RESET_ABOVE] re-arms them. */
+    @Synchronized
     fun onBattery(percent: Int): List<Command> {
         if (percent > RESET_ABOVE) {
             alerted.clear()

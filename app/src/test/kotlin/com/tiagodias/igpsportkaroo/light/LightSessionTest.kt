@@ -497,6 +497,36 @@ class LightSessionTest {
     }
 
     @Test
+    fun `manual mode while auto is on disables auto first`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1)) // AUTO_LIGHT on, HIGH
+        link.sent.clear()
+        assertTrue(session.selectManualMode(5))
+        assertEquals(
+            listOf(
+                hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_LIGHT, SmartConfig.OFF)),
+                hex(IgpsProtocol.readSmartConfigs()),
+                hex(IgpsProtocol.setMode(5)),
+                hex(IgpsProtocol.readCurrentMode()),
+            ),
+            link.sent,
+        )
+        assertFalse(session.state.value.autoLightOn)
+        assertEquals(5, session.state.value.mode)
+    }
+
+    @Test
+    fun `manual mode with auto off just selects the mode`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(1)) // no configs reported: auto off
+        link.sent.clear()
+        assertTrue(session.selectManualMode(2))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(2)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
     fun `flash cycles the flash levels and returns to the last one`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)

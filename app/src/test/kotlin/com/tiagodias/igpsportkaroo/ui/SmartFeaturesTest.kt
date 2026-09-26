@@ -34,10 +34,10 @@ class SmartFeaturesTest {
     }
 
     @Test
-    fun `each feature has its own label and the first three a subtitle`() {
+    fun `each feature has its own label, and the ones that need explaining a subtitle`() {
         val features = SmartFeatures.visible(vs1200s)
         assertEquals(features.size, features.map { it.label }.toSet().size)
-        features.take(3).forEach { assertNotNull(it.subtitle) }
-        features.drop(3).forEach { assertNull(it.subtitle) }
+        val explained = setOf(SmartConfig.AUTO_LIGHT, SmartConfig.LUMEN_VARY, SmartConfig.AUTO_SLEEP, SmartConfig.SYNC_OFF)
+        features.forEach { if (it.id in explained) assertNotNull(it.subtitle) else assertNull(it.subtitle) }
     }
 }

@@ -24,12 +24,13 @@
     <string name="feature_auto_light">Auto light</string>
     <string name="feature_auto_light_subtitle">Adjusts brightness to ambient light; can switch off in daylight</string>
     <string name="feature_lumen_vary">Speed-based brightness</string>
-    <string name="feature_lumen_vary_subtitle">Brightness follows your speed</string>
+    <string name="feature_lumen_vary_subtitle">Needs speed from the bike computer — works with iGPSPORT computers; may have no effect on Karoo</string>
     <string name="feature_auto_sleep">Auto sleep</string>
     <string name="feature_auto_sleep_subtitle">Sleeps when not moving</string>
     <string name="feature_auto_low">Auto dim when stopped</string>
     <string name="feature_auto_lowbat">Low-battery saving</string>
     <string name="feature_sync_off">Turn off with bike computer</string>
+    <string name="feature_sync_off_subtitle">Light switches off when the bike computer disconnects. May also switch off on brief Bluetooth drops — leave off unless you want this.</string>
     <string name="section_ride">Ride</string>
     <string name="settings_ride_start">When a ride starts, set light to</string>
     <string name="ride_start_auto">AUTO</string>

@@ -12,6 +12,7 @@ class RideAutomationTest {
 
     @Test
     fun `ride start selects the configured mode once`() {
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false)) // consumer registered while idle
         assertEquals(listOf(SelectMode(1)), automation.onRideState(isRecording = true))
         // Resumed / still recording: nothing new.
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
@@ -23,7 +24,17 @@ class RideAutomationTest {
     @Test
     fun `ride start can select auto`() {
         settings = settings.copy(rideStart = RideStart.Auto)
+        automation.onRideState(isRecording = false)
         assertEquals(listOf(SelectAuto), automation.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `a ride already recording at the first event is not a ride start`() {
+        // The extension restarted mid-ride: the rider may have changed the light since the real start.
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false))
+        assertEquals(listOf(SelectMode(1)), automation.onRideState(isRecording = true))
     }
 
     @Test

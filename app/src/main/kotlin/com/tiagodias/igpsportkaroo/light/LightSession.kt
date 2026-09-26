@@ -200,9 +200,17 @@ class LightSession(
         val cycling = !s.poweredOff && !s.autoLightOn && s.mode in group
         val next = if (cycling) LightModes.next(s.mode, levels(s.enabledModes)) else null
         val target = next ?: current(s) ?: return false
+        return selectManualMode(target)
+    }
+
+    /**
+     * Selects [mode] as a manual mode: switches auto light off first when it is on, since the light otherwise
+     * keeps driving its output itself and the mode change does nothing visible. One atomic step on [commandLock].
+     */
+    fun selectManualMode(mode: Int): Boolean = synchronized(commandLock) {
         // Switching auto light off also clears a daylight "output off": manual modes always light.
-        if (s.autoLightOn && !setSmartConfig(SmartConfig.AUTO_LIGHT, on = false)) return false
-        return selectMode(target)
+        if (_state.value.autoLightOn && !setSmartConfig(SmartConfig.AUTO_LIGHT, on = false)) return false
+        selectMode(mode)
     }
 
     /** A mode report ends "off" unless it is the echo the light sends right after our OFF command. */

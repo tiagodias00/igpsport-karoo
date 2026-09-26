@@ -158,8 +158,7 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     /** A hardware button (Karoo "bonus action") mapped in Settings → Controls; ids are in extension_info.xml. */
     override fun onBonusAction(actionId: String) {
         if (actionId == ACTION_OPEN_CONTROLS) {
-            Timber.i("Bonus action %s", actionId)
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            openControls()
             return
         }
         val session = LightHub.session
@@ -178,14 +177,41 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     }
 
     /**
+     * Opens the app page. Android 12 may silently block an activity start from a service in the background,
+     * so if the page isn't on screen shortly after, a Karoo notification offers to open it instead.
+     */
+    private fun openControls() {
+        val started = runCatching {
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        Timber.i("Bonus action %s: startActivity %s", ACTION_OPEN_CONTROLS, if (started.isSuccess) "requested" else "failed: ${started.exceptionOrNull()}")
+        scope.launch {
+            delay(OPEN_CONTROLS_CHECK_MS)
+            if (MainActivity.onScreen) {
+                Timber.i("App page is on screen")
+                return@launch
+            }
+            Timber.w("App page not on screen after %d ms (background start blocked?); offering a notification", OPEN_CONTROLS_CHECK_MS)
+            karooSystem.dispatch(
+                SystemNotification(
+                    id = "igps-open-controls",
+                    message = getString(R.string.control_title),
+                    action = getString(R.string.open_settings),
+                    actionIntent = SETTINGS_ACTION,
+                ),
+            )
+        }
+    }
+
+    /**
      * Runs automation [commands]. Mode changes wait (up to [RIDE_START_WAIT_MS]) for the light to be connected
      * with its modes known: a ride usually starts right after the Karoo boots, before the light has connected.
      */
-    @Synchronized // RideAutomation is not thread-safe: the ride-state consumer and the device loop both feed it.
     private fun execute(commands: List<Command>) {
         commands.forEach { command ->
             when (command) {
-                is Command.SelectMode -> whenLightReady(command) { it.selectMode(command.mode) }
+                // Manual: with auto light on (the VS1200S default) a plain mode change would do nothing visible.
+                is Command.SelectMode -> whenLightReady(command) { it.selectManualMode(command.mode) }
                 Command.SelectAuto -> whenLightReady(command) { it.selectAuto() }
                 is Command.LowBatteryAlert -> {
                     Timber.i("Low battery alert: %d%%", command.percent)
@@ -246,6 +272,7 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         const val SETTINGS_ACTION = "com.tiagodias.igpsportkaroo.SETTINGS"
         const val CONTROL_ACTION = "com.tiagodias.igpsportkaroo.CONTROL"
         const val RIDE_START_WAIT_MS = 60_000L
+        const val OPEN_CONTROLS_CHECK_MS = 1_000L
 
         // Bonus action ids: must match extension_info.xml.
         const val ACTION_NEXT_MODE = "next-mode"

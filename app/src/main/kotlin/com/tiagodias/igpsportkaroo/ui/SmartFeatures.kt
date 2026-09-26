@@ -14,7 +14,7 @@ object SmartFeatures {
         Feature(SmartConfig.AUTO_SLEEP, R.string.feature_auto_sleep, R.string.feature_auto_sleep_subtitle),
         Feature(SmartConfig.AUTO_LOW, R.string.feature_auto_low, null),
         Feature(SmartConfig.AUTO_LOWBAT, R.string.feature_auto_lowbat, null),
-        Feature(SmartConfig.SYNC_OFF, R.string.feature_sync_off, null),
+        Feature(SmartConfig.SYNC_OFF, R.string.feature_sync_off, R.string.feature_sync_off_subtitle),
     )
 
     /** The features the light declares in [configs] (id to status), in the app page's order; unknown ids are hidden. */
