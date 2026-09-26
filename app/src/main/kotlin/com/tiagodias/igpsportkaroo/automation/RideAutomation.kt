@@ -14,24 +14,31 @@ sealed interface Command {
  * Pure ride automation: the ride-start action and the low-battery alerts. [settings] is read on every
  * event, so changes on the app page apply right away. Thread-safe: the ride-state consumer and the device
  * loop call it from different threads.
+ *
+ * Whether a ride is recording survives extension restarts: [initialRecording] is the last state persisted,
+ * and [onRecordingChanged] persists every ride state seen. Karoo does not send the current ride state when
+ * the consumer registers (device log 13:46), so the first event can be a real ride start and is not ignored;
+ * a restart mid-ride is told apart by the persisted state instead.
  */
-class RideAutomation(private val settings: () -> AutomationSettings) {
-    private var primed = false
-    private var recording = false
+class RideAutomation(
+    private val settings: () -> AutomationSettings,
+    initialRecording: Boolean = false,
+    private val onRecordingChanged: (Boolean) -> Unit = {},
+) {
+    private var recording = initialRecording
     private val alerted = mutableSetOf<Int>()
 
     /**
      * On the transition to recording (a new ride, not a resume), the configured ride-start command; on the
      * transition back to idle (a ride end, not a pause: paused rides are still reported as recording),
-     * [Command.TurnOff] when configured. The first event only records the state: already recording, or already
-     * idle, then means the extension (re)started mid-ride or right after a ride ended.
+     * [Command.TurnOff] when configured.
      */
     @Synchronized
     fun onRideState(isRecording: Boolean): List<Command> {
-        val started = primed && isRecording && !recording
-        val ended = primed && !isRecording && recording
-        primed = true
+        val started = isRecording && !recording
+        val ended = !isRecording && recording
         recording = isRecording
+        onRecordingChanged(isRecording)
         val commands = mutableListOf<Command>()
         if (started) {
             when (val start = settings().rideStart) {

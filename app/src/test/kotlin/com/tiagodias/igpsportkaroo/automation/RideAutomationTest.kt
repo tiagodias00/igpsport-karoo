@@ -9,7 +9,7 @@ import org.junit.Test
 
 class RideAutomationTest {
     private var settings = AutomationSettings(RideStart.Mode(1), lowBatteryAlerts = true, offAtRideEnd = true)
-    private val automation = RideAutomation { settings }
+    private val automation = RideAutomation(settings = { settings })
 
     @Test
     fun `ride start selects the configured mode once`() {
@@ -23,6 +23,14 @@ class RideAutomationTest {
         assertEquals(listOf(SelectMode(1)), automation.onRideState(isRecording = true))
     }
 
+    // Device log 13:46:20 (device-log-1346.txt): the extension had been (re)installed while idle, Karoo sent no
+    // state on registration, and the first event was the real Idle -> Recording: it must start the ride.
+    @Test
+    fun `the first event can be a genuine ride start`() {
+        settings = settings.copy(rideStart = RideStart.Auto)
+        assertEquals(listOf(SelectAuto), automation.onRideState(isRecording = true))
+    }
+
     @Test
     fun `ride start can select auto`() {
         settings = settings.copy(rideStart = RideStart.Auto)
@@ -31,13 +39,29 @@ class RideAutomationTest {
     }
 
     @Test
-    fun `a ride already recording at the first event is not a ride start`() {
+    fun `a restart mid-ride does not re-apply the ride start`() {
         settings = settings.copy(offAtRideEnd = false) // ride end is covered separately below
-        // The extension restarted mid-ride: the rider may have changed the light since the real start.
-        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
-        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
-        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false))
-        assertEquals(listOf(SelectMode(1)), automation.onRideState(isRecording = true))
+        // The extension restarted mid-ride (persisted: recording): the rider may have changed the light since.
+        val restarted = RideAutomation(settings = { settings }, initialRecording = true)
+        assertEquals(emptyList<Command>(), restarted.onRideState(isRecording = true))
+        assertEquals(emptyList<Command>(), restarted.onRideState(isRecording = false))
+        assertEquals(listOf(SelectMode(1)), restarted.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `a restart while idle still applies the next ride start`() {
+        val restarted = RideAutomation(settings = { settings }, initialRecording = false)
+        assertEquals(listOf(SelectMode(1)), restarted.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `every ride state is persisted`() {
+        val persisted = mutableListOf<Boolean>()
+        val automation = RideAutomation(settings = { settings }, onRecordingChanged = { persisted += it })
+        automation.onRideState(isRecording = true)
+        automation.onRideState(isRecording = true)
+        automation.onRideState(isRecording = false)
+        assertEquals(listOf(true, true, false), persisted)
     }
 
     @Test
@@ -49,7 +73,7 @@ class RideAutomationTest {
 
     @Test
     fun `ride end turns the light off when enabled`() {
-        automation.onRideState(isRecording = false) // primed (idle)
+        automation.onRideState(isRecording = false) // idle
         automation.onRideState(isRecording = true) // ride start
         assertEquals(listOf(TurnOff), automation.onRideState(isRecording = false)) // ride end
     }
@@ -71,10 +95,17 @@ class RideAutomationTest {
     }
 
     @Test
-    fun `first event after restart does not turn off`() {
-        // The extension restarted right after the ride ended: the first event reports idle, but it must only
-        // record the state (same priming rule as ride start).
+    fun `idle while not recording does not turn off`() {
+        // Nothing was recording (fresh install, or persisted idle): an idle event is not a ride end.
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false))
+        val restarted = RideAutomation(settings = { settings }, initialRecording = false)
+        assertEquals(emptyList<Command>(), restarted.onRideState(isRecording = false))
+    }
+
+    @Test
+    fun `a ride end after a restart mid-ride turns off`() {
+        val restarted = RideAutomation(settings = { settings }, initialRecording = true)
+        assertEquals(listOf(TurnOff), restarted.onRideState(isRecording = false))
     }
 
     @Test

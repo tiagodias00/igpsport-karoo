@@ -19,6 +19,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("off_at_ride_end", true)
         set(value) { prefs.edit().putBoolean("off_at_ride_end", value).apply() }
 
+    /** Whether a ride was recording at the last ride-state event: tells a restart mid-ride from a ride start. */
+    var lastRecording: Boolean
+        get() = prefs.getBoolean("last_recording", false)
+        set(value) { prefs.edit().putBoolean("last_recording", value).apply() }
+
     fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts, offAtRideEnd)
 
     companion object {

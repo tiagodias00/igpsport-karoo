@@ -53,7 +53,15 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     private val settings by lazy { Settings(applicationContext) }
 
     /** Ride-start action and low-battery alerts; fed from the RideState consumer and the device loop. */
-    private val automation by lazy { RideAutomation(settings::automation) }
+    private val automation by lazy {
+        RideAutomation(
+            settings = settings::automation,
+            initialRecording = settings.lastRecording,
+            onRecordingChanged = { recording ->
+                if (recording != settings.lastRecording) settings.lastRecording = recording
+            },
+        )
+    }
     private var rideStateConsumer: String? = null
 
     override val types by lazy {
@@ -75,7 +83,9 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
             karooSystem.dispatch(RequestBluetooth(extension))
             if (rideStateConsumer == null) {
                 rideStateConsumer = karooSystem.addConsumer { state: RideState ->
-                    execute(automation.onRideState(isRecording = state !is RideState.Idle))
+                    val commands = automation.onRideState(isRecording = state !is RideState.Idle)
+                    Timber.i("Ride state %s -> %s", state, commands)
+                    execute(commands)
                 }
             }
             if (Permissions.missing(applicationContext).isNotEmpty()) {
