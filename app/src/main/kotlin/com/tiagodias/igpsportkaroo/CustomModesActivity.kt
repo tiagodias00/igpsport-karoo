@@ -228,7 +228,8 @@ class CustomModesActivity : Activity() {
             alpha = 0.7f
             setPadding(0, dp(12), 0, 0)
         })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        // Stacked full-width: side by side, "Restore original" wraps on the Karoo's narrow screen and the two differ in height.
+        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         preview = Button(this).apply {
             setText(R.string.custom_preview)
             isAllCaps = false
@@ -237,7 +238,7 @@ class CustomModesActivity : Activity() {
                 Timber.i("Custom modes page: show custom %d (sent=%b)", slot, sent)
             }
         }
-        row.addView(preview, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        row.addView(preview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, WRAP_CONTENT))
         restore = Button(this).apply {
             setText(R.string.custom_restore)
             isAllCaps = false
@@ -248,7 +249,7 @@ class CustomModesActivity : Activity() {
                 if (!sent) redraw()
             }
         }
-        row.addView(restore, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        row.addView(restore, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, WRAP_CONTENT))
         custom.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) })
     }
 
