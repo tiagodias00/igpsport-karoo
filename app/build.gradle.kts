@@ -19,6 +19,9 @@ fun semverToVersionCode(v: String): Int {
 
 val githubRepo: String = providers.gradleProperty("githubRepo").getOrElse("OWNER/igpsport-karoo")
 
+// Release builds are signed only when a keystore is supplied via env vars (CI, Task 16).
+val releaseKeystore: String? = System.getenv("KEYSTORE_FILE")
+
 android {
     namespace = "com.tiagodias.igpsportkaroo"
     compileSdk = 35
@@ -33,9 +36,21 @@ android {
             "https://github.com/$githubRepo/releases/latest/download/manifest.json"
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
