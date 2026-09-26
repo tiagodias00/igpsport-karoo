@@ -10,7 +10,7 @@ Switch modes with a tap on your ride screen, keep an eye on the light's battery,
 and let the light switch on and off with your rides.
 
 [![Latest release](https://img.shields.io/github/v/release/tiagodias00/igpsport-karoo?label=version)](https://github.com/tiagodias00/igpsport-karoo/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/tiagodias00/igpsport-karoo/total)](https://github.com/tiagodias00/igpsport-karoo/releases)
+[![Downloads](https://img.shields.io/github/downloads/tiagodias00/igpsport-karoo/total?label=downloads)](https://github.com/tiagodias00/igpsport-karoo/releases)
 [![Build](https://github.com/tiagodias00/igpsport-karoo/actions/workflows/build.yml/badge.svg)](https://github.com/tiagodias00/igpsport-karoo/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
