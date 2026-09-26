@@ -125,6 +125,25 @@ class LightSessionTest {
     }
 
     @Test
+    fun `logs every received frame with what it parsed to`() = runTest {
+        val link = FakeLink()
+        val logged = mutableListOf<String>()
+        val session = LightSession(link, "AA:BB:CC:DD:EE:FF", backgroundScope, frameLog = { logged += it })
+        session.start()
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        val unknown = Hex.decode("03 6B 03 FF 01 FF FF 02 FF FF FF FF FF FF FF FF FF FF FF 00").also {
+            it[19] = Crc8.maxim(it, 0, 19).toByte()
+        }
+        report(link, vs1200sOutputOff, unknown)
+        assertEquals(2, logged.size)
+        assertTrue(logged[0], logged[0].startsWith("rx ${hex(vs1200sOutputOff)} -> LightUpdate("))
+        assertTrue(logged[0], "outputOff=true" in logged[0])
+        assertEquals("rx ${hex(unknown)} -> null", logged[1])
+    }
+
+    @Test
     fun `reassembles fragments into state`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)

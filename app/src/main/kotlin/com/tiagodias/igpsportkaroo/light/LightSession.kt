@@ -3,6 +3,7 @@ package com.tiagodias.igpsportkaroo.light
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.FrameAssembler
+import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.protocol.LightState
@@ -20,13 +21,17 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
-/** Turns link events into [LightState] and light commands into frames, for one paired light. */
+/**
+ * Turns link events into [LightState] and light commands into frames, for one paired light. [frameLog], when
+ * set (debug builds), gets one line per received frame and what it parsed to.
+ */
 class LightSession(
     private val link: LightLink,
     private val address: String,
     private val scope: CoroutineScope,
     private val pollIntervalMs: Long = 60_000,
     private val now: () -> Long = System::currentTimeMillis,
+    private val frameLog: ((String) -> Unit)? = null,
 ) {
     private val _state = MutableStateFlow(LightState())
     val state: StateFlow<LightState> = _state.asStateFlow()
@@ -107,7 +112,9 @@ class LightSession(
                     _state.update { it.copy(connected = false) }
                 }
                 is LinkEvent.Fragment -> assembler.push(event.bytes).forEach { frame ->
-                    IgpsProtocol.parseFrame(frame)?.let { update -> _state.update { applyReport(it, update) } }
+                    val update = IgpsProtocol.parseFrame(frame)
+                    frameLog?.invoke("rx ${Hex.encode(frame)} -> $update")
+                    update?.let { _state.update { state -> applyReport(state, it) } }
                 }
             }
         }

@@ -114,7 +114,8 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     override fun connectDevice(uid: String, emitter: Emitter<DeviceEvent>) {
         val address = uid.removePrefix(UID_PREFIX)
         Timber.i("connectDevice %s", address)
-        val session = LightSession(GattLightLink(applicationContext), address, scope)
+        val frameLog: ((String) -> Unit)? = if (BuildConfig.DEBUG) { line -> Timber.d(line) } else null
+        val session = LightSession(GattLightLink(applicationContext), address, scope, frameLog = frameLog)
         deviceJob?.cancel()
         LightHub.session?.stop()
         LightHub.session = session
