@@ -19,4 +19,6 @@ data class LightUpdate(
      * it carries no run time (auto light has switched the output off, daylight), false when it does (lit).
      */
     val outputOff: Boolean? = null,
+    /** A custom slot's config, from a custom-mode reply (sub 3). */
+    val customMode: CustomModeConfig? = null,
 )
