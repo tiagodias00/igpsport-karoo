@@ -85,27 +85,31 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
             )
         }
 
+        /**
+         * AUTO shows the mode auto light is running ("HIGH 95%" with the brightness, "HI" compact). A bare
+         * brightness % read as the battery level. Blank while auto is off: its reports would be stale.
+         */
         private fun auto(state: LightState): Button {
-            val brightness = state.autoBrightnessPercent?.let { "$it%" }
-            // Blank while auto is off: its brightness / daylight reports would be stale.
             val on = state.autoLightOn
+            val mode = state.mode
+            val brightness = state.autoBrightnessPercent
             return Button(
                 kind = Kind.AUTO,
                 label = "AUTO",
                 detail = when {
                     !on -> ""
                     state.outputOff -> "off (day)"
-                    brightness != null -> brightness
-                    else -> state.mode?.let(LightModes::label).orEmpty()
+                    mode == null -> ""
+                    brightness != null -> "${LightModes.label(mode)} $brightness%"
+                    else -> LightModes.label(mode)
                 },
                 active = state.connected && !state.poweredOff && state.autoLightOn,
                 available = state.smartConfigs.isEmpty() || SmartConfig.AUTO_LIGHT in state.smartConfigs,
                 shortLabel = "AUTO",
                 shortDetail = when {
                     !on -> ""
-                    state.outputOff -> "day"
-                    brightness != null -> brightness
-                    else -> state.mode?.let(LightModes::shortLabel).orEmpty()
+                    state.outputOff -> "off"
+                    else -> mode?.let(LightModes::shortLabel).orEmpty()
                 },
             )
         }

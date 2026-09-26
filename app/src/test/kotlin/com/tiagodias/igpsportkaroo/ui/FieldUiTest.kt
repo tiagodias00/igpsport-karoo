@@ -103,18 +103,27 @@ class FieldUiTest {
     }
 
     @Test
-    fun `AUTO detail shows daylight off, then brightness, then the mode`() {
+    fun `auto detail shows the running mode`() {
+        // Brightness alone read as battery on the Karoo: it only follows the mode, and only on the regular fields.
+        val dimmed = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).button(Kind.AUTO)
+        assertEquals("HIGH 95%", dimmed.detail)
+        assertEquals("HI", dimmed.shortDetail)
+
+        val noBrightness = FieldUi.from(autoOn).button(Kind.AUTO)
+        assertEquals("HIGH", noBrightness.detail)
+        assertEquals("HI", noBrightness.shortDetail)
+
+        val unknownMode = FieldUi.from(autoOn.copy(mode = null, autoBrightnessPercent = 95)).button(Kind.AUTO)
+        assertEquals("", unknownMode.detail)
+        assertEquals("", unknownMode.shortDetail)
+    }
+
+    @Test
+    fun `auto detail says when daylight switched the output off`() {
         val daylight = FieldUi.from(autoOn.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
         assertEquals("off (day)", daylight.detail)
-        assertEquals("day", daylight.shortDetail)
-
-        val dimmed = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).button(Kind.AUTO)
-        assertEquals("95%", dimmed.detail)
-        assertEquals("95%", dimmed.shortDetail)
-
-        val unknown = FieldUi.from(autoOn).button(Kind.AUTO)
-        assertEquals("HIGH", unknown.detail)
-        assertEquals("HI", unknown.shortDetail)
+        assertEquals("off", daylight.shortDetail)
+        assertEquals("AUTO off", daylight.compactText(maxChars = 8))
     }
 
     @Test
@@ -142,8 +151,9 @@ class FieldUiTest {
     fun `compact labels include the detail when it fits`() {
         val ui = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95).apply(LightUpdate(mode = 5)))
         assertEquals(listOf("SOL", "FLS", "AUTO", "OFF"), ui.buttons.map { it.shortLabel })
-        assertEquals(listOf("HI", "LO", "95%", ""), ui.buttons.map { it.shortDetail })
-        assertEquals(listOf("SOL HI", "FLS LO", "AUTO 95%", "OFF"), ui.buttons.map { it.compactText(maxChars = 8) })
+        assertEquals(listOf("HI", "LO", "FL LO", ""), ui.buttons.map { it.shortDetail })
+        assertEquals(listOf("SOL HI", "FLS LO", "AUTO", "OFF"), ui.buttons.map { it.compactText(maxChars = 8) })
+        assertEquals("AUTO FL LO", ui.button(Kind.AUTO).compactText(maxChars = 10))
         assertEquals(listOf("SOL", "FLS", "AUTO", "OFF"), ui.buttons.map { it.compactText(maxChars = 5) })
     }
 
