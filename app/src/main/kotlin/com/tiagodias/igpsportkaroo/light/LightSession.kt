@@ -188,13 +188,15 @@ class LightSession(
 
     /**
      * Writes one [change] to custom slot [mode], shows it at once and reads the slot back (the light only ACKs).
-     * False when not connected, or while the slot's config is unknown (nothing to edit yet). Serialized on
-     * [commandLock], like the other commands. The light validates nothing, so the caller clamps the values:
-     * [IgpsProtocol.modifyCustomMode] rejects any outside the app's ranges.
+     * False when not connected, or while the slot's config is unknown (nothing to edit yet). Also false, without
+     * sending anything, for a value outside the app's ranges: the light validates nothing, so the caller clamps,
+     * but a miss must not crash the process the extension service runs in. Never throws. Serialized on
+     * [commandLock], like the other commands.
      */
     fun changeCustomMode(mode: Int, change: CustomChange): Boolean = synchronized(commandLock) {
         val current = _state.value.customModes[mode] ?: return false
-        if (!link.send(IgpsProtocol.modifyCustomMode(mode, change))) return false
+        val frame = customFrames(mode, listOf(change))?.single() ?: return false
+        if (!link.send(frame)) return false
         _state.value = _state.value.let { it.copy(customModes = it.customModes + (mode to current.applied(change))) }
         reselectIfPlaying(mode)
         return link.send(IgpsProtocol.readCustomMode(mode))
@@ -202,26 +204,30 @@ class LightSession(
 
     /**
      * Turns custom slot [target.mode] back into [target] with only the writes that differ (the pattern switch
-     * last), then reads it back. True without sending anything when it already matches. False, also without
-     * sending anything, when a write would carry a value outside the app's ranges (a snapshot the light stored
-     * wrongly). Same rules as [changeCustomMode].
+     * last), then reads it back. Without sending anything: true when the last known config already matches and
+     * the light is connected; false when a write would carry a value outside the app's ranges (a snapshot the
+     * light stored wrongly). If the link drops partway, some writes may have landed: false, the state is left
+     * as it was, and the next connect reads the slot again. Otherwise the same rules as [changeCustomMode].
      */
     fun restoreCustomMode(target: CustomModeConfig): Boolean = synchronized(commandLock) {
         val current = _state.value.customModes[target.mode] ?: return false
         val changes = current.changesTo(target)
-        if (changes.isEmpty()) return true
+        if (changes.isEmpty()) return _state.value.connected
         // Every frame is built before the first is sent, so an invalid value can't leave a half-restored slot.
-        val frames = try {
-            changes.map { IgpsProtocol.modifyCustomMode(target.mode, it) }
-        } catch (e: IllegalArgumentException) {
-            Timber.w(e, "Not restoring custom mode %d", target.mode)
-            return false
-        }
+        val frames = customFrames(target.mode, changes) ?: return false
         for (frame in frames) if (!link.send(frame)) return false
         val restored = changes.fold(current) { c, ch -> c.applied(ch) }
         _state.value = _state.value.let { it.copy(customModes = it.customModes + (target.mode to restored)) }
         reselectIfPlaying(target.mode)
         return link.send(IgpsProtocol.readCustomMode(target.mode))
+    }
+
+    /** The frames for [changes] to custom slot [mode], or null (logged) if any value is outside the app's ranges. */
+    private fun customFrames(mode: Int, changes: List<CustomChange>): List<ByteArray>? = try {
+        changes.map { IgpsProtocol.modifyCustomMode(mode, it) }
+    } catch (e: IllegalArgumentException) {
+        Timber.w(e, "Not writing custom mode %d", mode)
+        null
     }
 
     /** Edits apply live on the VS1200S (docs/vs1200s-findings.md), so nothing to do. */

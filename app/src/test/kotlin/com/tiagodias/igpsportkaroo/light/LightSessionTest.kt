@@ -56,9 +56,15 @@ class LightSessionTest {
                     openFlows--
                 }
         }
-        override fun send(frame: ByteArray): Boolean {
-            if (accepting) synchronized(sendLock) { sent += Hex.encode(frame) }
-            return accepting
+        /** How many more frames the link takes before it refuses them (like a link dropping mid-sequence). */
+        var sendsLeft = Int.MAX_VALUE
+        override fun send(frame: ByteArray): Boolean = synchronized(sendLock) {
+            val ok = accepting && sendsLeft > 0
+            if (ok) {
+                sendsLeft--
+                sent += Hex.encode(frame)
+            }
+            ok
         }
     }
 
@@ -966,15 +972,18 @@ class LightSessionTest {
     @Test
     fun `reads the custom configs again after a reconnect`() = runTest {
         val link = FakeLink()
-        connectedSession(link)
-        report(link, vs1200sDeclared)
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, customReplySteady)
         link.events.tryEmit(LinkEvent.Disconnected)
         runCurrent()
         link.events.tryEmit(LinkEvent.Connected)
         runCurrent()
+        assertEquals(c1Steady, session.state.value.customModes[64]) // the last known config is kept meanwhile
         link.sent.clear()
         report(link, vs1200sDeclared) // the read-back sent on connect
         assertEquals(listOf(hex(IgpsProtocol.readCustomMode(64))), link.sent)
+        report(link, customReplyFlash) // e.g. edited in the iGPSPORT app while we were away
+        assertEquals(CustomMode.FLASH, session.state.value.customModes.getValue(64).selected)
     }
 
     @Test
@@ -1064,5 +1073,65 @@ class LightSessionTest {
         assertFalse(session.restoreCustomMode(bad))
         assertEquals(emptyList<String>(), link.sent)
         assertEquals(before, session.state.value)
+    }
+
+    @Test
+    fun `refuses an out-of-range change without sending`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        link.sent.clear()
+        val before = session.state.value
+        assertFalse(session.changeCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 101)))
+        assertFalse(session.changeCustomMode(64, CustomChange.Cycle(CustomMode.FLASH, 5)))
+        assertEquals(emptyList<String>(), link.sent)
+        assertEquals(before, session.state.value)
+    }
+
+    @Test
+    fun `restores a brightness edit and the pattern in order, then reads back`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplyFlash) // the light: flash selected, steady main 30 %
+        link.sent.clear()
+        val target = CustomModeConfig(
+            64, CustomMode.STEADY,
+            listOf(
+                CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 17))),
+                CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 2, 30),
+            ),
+        )
+        assertTrue(session.restoreCustomMode(target))
+        assertEquals(
+            listOf(
+                hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 17))),
+                hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Pattern(CustomMode.STEADY))),
+                hex(IgpsProtocol.readCustomMode(64)),
+            ),
+            link.sent,
+        )
+        assertEquals(target, session.state.value.customModes.getValue(64))
+    }
+
+    @Test
+    fun `a restore cut short by the link leaves the state for the next read`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplyFlash)
+        val before = session.state.value
+        link.sendsLeft = 1 // the brightness write goes out, the pattern switch doesn't
+        val target = c1Steady.copy(patterns = listOf(CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 17)))) + c1Steady.patterns.drop(1))
+        assertFalse(session.restoreCustomMode(target))
+        assertEquals(before, session.state.value)
+    }
+
+    @Test
+    fun `restoring while disconnected is refused even when the last known config matches`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        assertFalse(session.restoreCustomMode(c1Steady))
     }
 }
