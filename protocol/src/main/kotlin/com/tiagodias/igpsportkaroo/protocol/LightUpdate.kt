@@ -11,6 +11,9 @@ data class LightUpdate(
     val smartConfigs: Map<Int, Int>? = null,
     /** The brightness auto light currently drives the light at. */
     val autoBrightnessPercent: Int? = null,
-    /** True when a run-time report carries no run time: auto light has switched the output off (daylight). */
+    /**
+     * Only set by the light's spontaneous run-time state frames (type 03), never by a polled read-back: true when
+     * it carries no run time (auto light has switched the output off, daylight), false when it does (lit).
+     */
     val outputOff: Boolean? = null,
 )

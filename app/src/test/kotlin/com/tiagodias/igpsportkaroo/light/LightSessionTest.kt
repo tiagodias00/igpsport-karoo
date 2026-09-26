@@ -363,6 +363,59 @@ class LightSessionTest {
         assertEquals(2, session.state.value.mode)
     }
 
+    // Device log 13:47 (device-log-1346.txt): while lit, the light sends spontaneous type-03 run-time frames
+    // (with every output change, e.g. 13:47:03.905); after our OFF (13:47:46, 13:47:55) it sends none, and the
+    // only run time seen is the answer to our 60 s poll, a type-01 data frame that still says 525 min (13:48:04).
+    private val logRunTimeState525 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF 0D 02 00 00 FF FF FF FF 19")
+    private val logRunTimePolled525 =
+        Hex.decode("01 6A 05 FF 02 FF FF 00 0B B5 01 FF FF FF FF FF FF FF FF E0 08 6A 10 02 18 05 72 03 08 8D 04")
+
+    @Test
+    fun `a run-time state frame after the settle window means the light is on again`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(64))
+        session.selectMode(LightModes.OFF) // e.g. the ride-end TurnOff
+        advanceTimeBy(60_000)
+        report(link, logRunTimeState525) // switched on by its own button: no mode frame, but it lights again
+        assertFalse(session.state.value.poweredOff)
+    }
+
+    @Test
+    fun `a run-time state frame inside the settle window keeps the light off`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        session.selectMode(LightModes.OFF)
+        advanceTimeBy(500)
+        report(link, logRunTimeState525)
+        assertTrue(session.state.value.poweredOff)
+    }
+
+    @Test
+    fun `a polled run time does not mean the light is on`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        session.selectMode(LightModes.OFF)
+        advanceTimeBy(60_000)
+        report(link, logRunTimePolled525, respBattery87)
+        assertTrue(session.state.value.poweredOff)
+        assertEquals(525, session.state.value.remainingMinutes)
+    }
+
+    @Test
+    fun `a reconnect after off reads the mode back and ends off`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        session.selectMode(LightModes.OFF)
+        advanceTimeBy(60_000)
+        link.events.tryEmit(LinkEvent.Disconnected) // e.g. switched off and on again by its button
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        report(link, respMode3) // the read-back sent on connect
+        assertFalse(session.state.value.poweredOff)
+    }
+
     @Test
     fun `selecting a mode after off clears powered off`() = runTest {
         val link = FakeLink()

@@ -222,14 +222,21 @@ class LightSession(
     }
 
     /**
-     * A mode report ends "off" unless it is the echo the light sends right after our OFF command. Callers must
-     * already hold [commandLock]: this reads [offCommandAt] and, via [withAutoDimmed], mutates [dimTracker].
+     * Evidence that the light is on ends "off", unless it arrives within [OFF_SETTLE_MS] of our OFF command
+     * (the light echoes its remembered mode right after it): a mode report (a button press, or the read-back
+     * after a reconnect), or a spontaneous run-time state frame with a run time ([LightUpdate.outputOff] ==
+     * false), which the light sends only while lit — switched back on by its own button it may send no mode
+     * report at all. A polled run time is no evidence: the light answers it while off too.
+     *
+     * Callers must already hold [commandLock]: this reads [offCommandAt] and, via [withAutoDimmed], mutates
+     * [dimTracker].
      */
     private fun applyReport(state: LightState, update: LightUpdate): LightState {
         val applied = state.apply(update)
         val settling = offCommandAt?.let { now() - it < OFF_SETTLE_MS } ?: false
+        val lit = update.mode != null || update.outputOff == false
         val powered =
-            if (state.poweredOff && update.mode != null && !settling) applied.copy(poweredOff = false) else applied
+            if (state.poweredOff && lit && !settling) applied.copy(poweredOff = false) else applied
         return powered.withAutoDimmed()
     }
 
