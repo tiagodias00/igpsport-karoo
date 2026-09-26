@@ -3,6 +3,7 @@ package com.tiagodias.igpsportkaroo.light
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.Crc8
+import com.tiagodias.igpsportkaroo.protocol.CustomChange
 import com.tiagodias.igpsportkaroo.protocol.CustomLight
 import com.tiagodias.igpsportkaroo.protocol.CustomMode
 import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
@@ -960,5 +961,108 @@ class LightSessionTest {
         link.sent.clear()
         assertTrue(session.selectSolid()) // not in a steady mode: back to MID, not cycling from 64
         assertEquals(hex(IgpsProtocol.setMode(2)), link.sent.first())
+    }
+
+    @Test
+    fun `reads the custom configs again after a reconnect`() = runTest {
+        val link = FakeLink()
+        connectedSession(link)
+        report(link, vs1200sDeclared)
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        link.sent.clear()
+        report(link, vs1200sDeclared) // the read-back sent on connect
+        assertEquals(listOf(hex(IgpsProtocol.readCustomMode(64))), link.sent)
+    }
+
+    @Test
+    fun `changes a custom mode, shows it at once and reads it back`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        link.sent.clear()
+        val change = CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 40)
+        assertTrue(session.changeCustomMode(64, change))
+        assertEquals(listOf(hex(IgpsProtocol.modifyCustomMode(64, change)), hex(IgpsProtocol.readCustomMode(64))), link.sent)
+        assertEquals(40, session.state.value.customModes.getValue(64).brightness)
+    }
+
+    @Test
+    fun `a stale read-back corrects the optimistic change`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        session.changeCustomMode(64, CustomChange.Pattern(CustomMode.FLASH))
+        assertTrue(session.state.value.customModes.getValue(64).blinks)
+        report(link, customReplySteady) // the light says it still plays steady
+        assertFalse(session.state.value.customModes.getValue(64).blinks)
+    }
+
+    @Test
+    fun `refuses to change a custom mode whose config is unknown`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        link.sent.clear()
+        assertFalse(session.changeCustomMode(64, CustomChange.Pattern(CustomMode.FLASH)))
+        assertFalse(session.restoreCustomMode(c1Steady))
+        assertEquals(emptyList<String>(), link.sent)
+    }
+
+    @Test
+    fun `refuses custom-mode changes while disconnected`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        link.accepting = false
+        val before = session.state.value
+        assertFalse(session.changeCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 40)))
+        assertFalse(session.restoreCustomMode(c1Steady.copy(selected = CustomMode.FLASH)))
+        assertEquals(before, session.state.value)
+    }
+
+    @Test
+    fun `restores a custom mode with only the differing writes, pattern last`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplyFlash) // the light: flash selected
+        link.sent.clear()
+        assertTrue(session.restoreCustomMode(c1Steady)) // the snapshot: steady selected, same values
+        assertEquals(
+            listOf(hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Pattern(CustomMode.STEADY))), hex(IgpsProtocol.readCustomMode(64))),
+            link.sent,
+        )
+        assertEquals(c1Steady, session.state.value.customModes.getValue(64))
+    }
+
+    @Test
+    fun `restoring an unchanged custom mode sends nothing`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        link.sent.clear()
+        assertTrue(session.restoreCustomMode(c1Steady))
+        assertEquals(emptyList<String>(), link.sent)
+    }
+
+    @Test
+    fun `refuses to restore a snapshot the light would take wrongly, before sending anything`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        link.sent.clear()
+        val before = session.state.value
+        // The flash cycle differs and is valid, the steady brightness (101 %, which the light stores) is not.
+        val bad = CustomModeConfig(
+            64, CustomMode.STEADY,
+            listOf(
+                CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 101))),
+                CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 3, 30),
+            ),
+        )
+        assertFalse(session.restoreCustomMode(bad))
+        assertEquals(emptyList<String>(), link.sent)
+        assertEquals(before, session.state.value)
     }
 }

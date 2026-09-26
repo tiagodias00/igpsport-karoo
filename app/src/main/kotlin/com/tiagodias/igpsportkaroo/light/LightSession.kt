@@ -3,7 +3,9 @@ package com.tiagodias.igpsportkaroo.light
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.AutoDimTracker
+import com.tiagodias.igpsportkaroo.protocol.CustomChange
 import com.tiagodias.igpsportkaroo.protocol.CustomMode
+import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
 import com.tiagodias.igpsportkaroo.protocol.FrameAssembler
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
@@ -183,6 +185,47 @@ class LightSession(
         ).withAutoDimmed()
         return link.send(IgpsProtocol.readSmartConfigs())
     }
+
+    /**
+     * Writes one [change] to custom slot [mode], shows it at once and reads the slot back (the light only ACKs).
+     * False when not connected, or while the slot's config is unknown (nothing to edit yet). Serialized on
+     * [commandLock], like the other commands. The light validates nothing, so the caller clamps the values:
+     * [IgpsProtocol.modifyCustomMode] rejects any outside the app's ranges.
+     */
+    fun changeCustomMode(mode: Int, change: CustomChange): Boolean = synchronized(commandLock) {
+        val current = _state.value.customModes[mode] ?: return false
+        if (!link.send(IgpsProtocol.modifyCustomMode(mode, change))) return false
+        _state.value = _state.value.let { it.copy(customModes = it.customModes + (mode to current.applied(change))) }
+        reselectIfPlaying(mode)
+        return link.send(IgpsProtocol.readCustomMode(mode))
+    }
+
+    /**
+     * Turns custom slot [target.mode] back into [target] with only the writes that differ (the pattern switch
+     * last), then reads it back. True without sending anything when it already matches. False, also without
+     * sending anything, when a write would carry a value outside the app's ranges (a snapshot the light stored
+     * wrongly). Same rules as [changeCustomMode].
+     */
+    fun restoreCustomMode(target: CustomModeConfig): Boolean = synchronized(commandLock) {
+        val current = _state.value.customModes[target.mode] ?: return false
+        val changes = current.changesTo(target)
+        if (changes.isEmpty()) return true
+        // Every frame is built before the first is sent, so an invalid value can't leave a half-restored slot.
+        val frames = try {
+            changes.map { IgpsProtocol.modifyCustomMode(target.mode, it) }
+        } catch (e: IllegalArgumentException) {
+            Timber.w(e, "Not restoring custom mode %d", target.mode)
+            return false
+        }
+        for (frame in frames) if (!link.send(frame)) return false
+        val restored = changes.fold(current) { c, ch -> c.applied(ch) }
+        _state.value = _state.value.let { it.copy(customModes = it.customModes + (target.mode to restored)) }
+        reselectIfPlaying(target.mode)
+        return link.send(IgpsProtocol.readCustomMode(target.mode))
+    }
+
+    /** Edits apply live on the VS1200S (docs/vs1200s-findings.md), so nothing to do. */
+    private fun reselectIfPlaying(@Suppress("UNUSED_PARAMETER") mode: Int) = Unit
 
     /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
     fun selectSolid(): Boolean = selectManual({ it.isSteady(it.mode) }, { it.steadyLevels }) { it.steadyLevel }
