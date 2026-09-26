@@ -171,7 +171,6 @@ class MainActivity : Activity() {
             },
         )
         content.addView(settingSwitch(R.string.low_battery_alerts, settings.lowBatteryAlerts) { settings.lowBatteryAlerts = it })
-        content.addView(settingSwitch(R.string.cc_shortcut, settings.controlCenterShortcut) { settings.controlCenterShortcut = it })
     }
 
     private fun render(state: LightState) {

@@ -131,21 +131,6 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
                 val s = session.state.value
                 if (s.connected && !everConnected) {
                     everConnected = true
-                    // karoo-ext has no way to add a Control Center page, so a notification pointing at the app
-                    // page is the only shortcut that reaches it; fire once per connectDevice call, not on every
-                    // reconnect after a motion-sleep (everConnected already true by then).
-                    if (settings.controlCenterShortcut) {
-                        karooSystem.dispatch(
-                            SystemNotification(
-                                id = "igps-shortcut",
-                                message = getString(R.string.shortcut_message),
-                                subText = getString(R.string.shortcut_subtext),
-                                style = SystemNotification.Style.UPDATE,
-                                action = getString(R.string.shortcut_action),
-                                actionIntent = SETTINGS_ACTION,
-                            ),
-                        )
-                    }
                 }
                 // Karoo fails a device after 120s SEARCHING (no auto-retry) but the VS1200S motion-sleeps longer than that, so once connected we keep reporting CONNECTED; GattLightLink reconnects on its own underneath.
                 val reportedConnected = s.connected || everConnected

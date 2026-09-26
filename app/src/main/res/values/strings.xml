@@ -35,12 +35,8 @@
     <string name="ride_start_auto">AUTO</string>
     <string name="none">Don\'t change</string>
     <string name="low_battery_alerts" formatted="false">Low battery alerts (20% and 10%)</string>
-    <string name="cc_shortcut">Control Center shortcut (experimental)</string>
     <string name="open_controls">Open light controls</string>
     <string name="control_title">Light controls</string>
     <string name="low_battery_title">Light battery %1$d%%</string>
     <string name="low_battery_detail">Your iGPSPORT light is running low.</string>
-    <string name="shortcut_message">iGPSPORT light connected</string>
-    <string name="shortcut_subtext">Tap for light controls</string>
-    <string name="shortcut_action">Controls</string>
 </resources>

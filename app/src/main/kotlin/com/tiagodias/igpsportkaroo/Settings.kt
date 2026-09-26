@@ -15,10 +15,6 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("low_battery_alerts", true)
         set(value) { prefs.edit().putBoolean("low_battery_alerts", value).apply() }
 
-    var controlCenterShortcut: Boolean
-        get() = prefs.getBoolean("cc_shortcut", true)
-        set(value) { prefs.edit().putBoolean("cc_shortcut", value).apply() }
-
     fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts)
 
     companion object {
