@@ -7,6 +7,7 @@ import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
+import com.tiagodias.igpsportkaroo.ui.FieldUi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -629,6 +630,46 @@ class LightSessionTest {
         assertFalse(session.setSmartConfig(SmartConfig.AUTO_LOW, on = false))
         assertTrue(session.state.value.autoLightOn) // nothing was sent, so nothing changed
         assertEquals(1, session.state.value.mode)
+    }
+
+    // Device log 13:46 (device-log-1346.txt): a FLASH tap, then an AUTO tap, exactly as the light answered.
+    private val logFlashTap = listOf(
+        "03 6B 04 FF 01 FF FF 00 FF FF FF FF FF FF FF FF FF FF FF 8A",
+        "02 6A 04 FF 01 FF FF 00 FF FF FF FF FF FF FF FF FF FF FF 31",
+        "01 6A 04 FF 02 FF FF 00 30 CA 01 FF FF FF FF FF FF FF FF E2 08 6A 10 02 18 04 4A 04 08 05 10 01 4A 02 08 03 " +
+            "4A 04 08 09 10 01 4A 08 08 04 10 01 1A 02 08 3C 4A 08 08 0D 10 01 1A 02 08 1E 4A 04 08 0F 10 01",
+        "02 6A 02 FF 01 FF FF 00 FF FF FF FF FF FF FF FF FF FF FF D3",
+        "03 6B 03 FF 01 FF FF 05 FF FF FF FF FF FF FF FF FF FF FF 96",
+        "03 6B 06 FF 01 FF FF FF FF FF FF 5B 04 00 00 FF FF FF FF 0A",
+        "03 6A 05 FF 01 FF FF FF FF FF FF 5B 04 00 00 FF FF FF FF 19",
+        "03 6A 02 FF 01 FF FF 04 FF FF FF FF FF FF FF FF FF FF FF B3",
+        "01 6A 02 FF 02 FF FF 00 0A 19 01 FF FF FF FF FF FF FF FF 07 08 6A 10 02 18 02 6A 02 08 04",
+        "03 6B 07 FF 01 FF FF 4B FF FF FF FF FF FF FF FF FF FF FF 5B",
+        "03 6B 06 FF 01 FF FF FF FF FF FF 4C 04 00 00 FF FF FF FF 8E",
+        "03 6A 05 FF 01 FF FF FF FF FF FF 4C 04 00 00 FF FF FF FF 9D",
+    ).map(Hex::decode)
+    private val logAutoTap = listOf(
+        "03 6B 04 FF 01 FF FF 00 FF FF FF FF FF FF FF FF FF FF FF 8A",
+        "02 6A 04 FF 01 FF FF 00 FF FF FF FF FF FF FF FF FF FF FF 31",
+        "01 6A 04 FF 02 FF FF 00 32 59 01 FF FF FF FF FF FF FF FF 04 08 6A 10 02 18 04 4A 04 08 05 10 01 4A 04 08 03 " +
+            "10 01 4A 04 08 09 10 01 4A 08 08 04 10 01 1A 02 08 3C 4A 08 08 0D 10 01 1A 02 08 1E 4A 04 08 0F 10 01",
+    ).map(Hex::decode)
+
+    @Test
+    fun `device log - auto after flash highlights AUTO`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1)) // AUTO_LIGHT on, HIGH
+        assertTrue(session.selectFlash())
+        advanceTimeBy(150)
+        report(link, *logFlashTap.toTypedArray())
+        assertEquals(listOf(false, true, false, false), FieldUi.from(session.state.value).buttons.map { it.active })
+
+        advanceTimeBy(20_000)
+        assertTrue(session.selectAuto())
+        advanceTimeBy(150)
+        report(link, *logAutoTap.toTypedArray())
+        assertEquals(listOf(false, false, true, false), FieldUi.from(session.state.value).buttons.map { it.active })
     }
 
     @Test
