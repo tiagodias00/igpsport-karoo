@@ -135,14 +135,18 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         val address = uid.removePrefix(UID_PREFIX)
         Timber.i("connectDevice %s", address)
         val frameLog: ((String) -> Unit)? = if (BuildConfig.DEBUG) { line -> Timber.d(line) } else null
+        // Stopped before this light's saved pause is read, so the old session can't change it in between.
+        deviceJob?.cancel()
+        LightHub.session?.stop()
         // Monotonic: the OFF settle window and the reconnect rate limit must not jump with a wall-clock resync.
         val session = LightSession(
             GattLightLink(applicationContext), address, scope,
             now = { SystemClock.elapsedRealtime() },
             frameLog = frameLog,
+            // Saved per light: after a restart the paused auto sleep is still switched back on, on that light only.
+            sleepPause = settings.sleepPauses.load(address),
+            onSleepPauseChanged = { pause -> settings.sleepPauses.save(address, pause) },
         )
-        deviceJob?.cancel()
-        LightHub.session?.stop()
         LightHub.session = session
         session.start()
         val batteryTypeId = DataType.dataTypeId(extension, LightBatteryDataType.TYPE_ID)

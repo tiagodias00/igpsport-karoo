@@ -2,6 +2,7 @@ package com.tiagodias.igpsportkaroo.ui
 
 import androidx.annotation.StringRes
 import com.tiagodias.igpsportkaroo.R
+import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 
 /**
@@ -23,4 +24,11 @@ object SmartFeatures {
 
     /** The features the light declares in [configs] (id to status), in the app page's order; unknown ids are hidden. */
     fun visible(configs: Map<Int, Int>): List<Feature> = ALL.filter { it.id in configs }
+
+    /**
+     * Whether feature [id]'s switch shows off only because the app paused it while the light is off (auto sleep,
+     * [LightState.autoSleepPaused]): the page says so under the switch. Not once the light reports it on again.
+     */
+    fun pausedWhileOff(id: Int, state: LightState): Boolean =
+        id == SmartConfig.AUTO_SLEEP && state.autoSleepPaused && state.smartConfigs[id] == SmartConfig.OFF
 }

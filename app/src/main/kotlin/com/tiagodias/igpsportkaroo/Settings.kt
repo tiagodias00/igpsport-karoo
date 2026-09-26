@@ -34,6 +34,9 @@ class Settings(context: Context) {
         prefs.edit().putBoolean("last_recording", recording).putLong("last_recording_at", at).apply()
     }
 
+    /** Each light's auto-sleep pause (see [SleepPauseStore]). */
+    val sleepPauses = SleepPauseStore(prefs)
+
     /** The first config ever read for custom slot [mode]: "Restore original" goes back to it (plan decision D3). */
     fun customOriginal(mode: Int): CustomModeConfig? = CustomModeText.decode(prefs.getString("custom_original_$mode", null))
 

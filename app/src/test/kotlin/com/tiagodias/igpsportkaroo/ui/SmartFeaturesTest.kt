@@ -1,9 +1,12 @@
 package com.tiagodias.igpsportkaroo.ui
 
+import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SmartFeaturesTest {
@@ -42,5 +45,16 @@ class SmartFeaturesTest {
         assertEquals(features.size, features.map { it.label }.toSet().size)
         val explained = setOf(SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP)
         features.forEach { if (it.id in explained) assertNotNull(it.subtitle) else assertNull(it.subtitle) }
+    }
+
+    @Test
+    fun `auto sleep reads as paused while the app paused it and the light reports it off`() {
+        val paused = LightState(smartConfigs = mapOf(SmartConfig.AUTO_SLEEP to SmartConfig.OFF), autoSleepPaused = true)
+        assertTrue(SmartFeatures.pausedWhileOff(SmartConfig.AUTO_SLEEP, paused))
+        assertFalse(SmartFeatures.pausedWhileOff(SmartConfig.AUTO_LIGHT, paused))
+        assertFalse(SmartFeatures.pausedWhileOff(SmartConfig.AUTO_SLEEP, paused.copy(autoSleepPaused = false)))
+        // Switched back on elsewhere (e.g. the iGPSPORT app): the switch shows on, so no "paused" hint.
+        val onAgain = paused.copy(smartConfigs = mapOf(SmartConfig.AUTO_SLEEP to SmartConfig.ON))
+        assertFalse(SmartFeatures.pausedWhileOff(SmartConfig.AUTO_SLEEP, onAgain))
     }
 }

@@ -7,6 +7,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-26
+
+### Changed
+
+- **OFF stays off.** When you switch the light off from the Karoo, it no longer turns itself back
+  on when you move it. The light's **Auto sleep** is paused while the light is off, so moving it
+  can't wake it. The Karoo switches Auto sleep back on as soon as you pick a mode, or when it sees
+  you switch the light on with its own button. While it is paused, the app page says so under the
+  **Auto sleep** switch. If you change that switch yourself, your choice is kept.
+  - While the light is off like this, it stays in Bluetooth standby instead of sleeping, which uses
+    a little battery. If you use the light without the Karoo in the meantime, Auto sleep stays off
+    until the Karoo connects to it again.
+
+### Upgrading
+
+- **On the Karoo:** long-press the app in the extension list → Update.
+- **USB:** `adb install -r igpsport-karoo.apk`.
+- Either way your pairing, fields and settings are kept.
+
 ## [0.2.0] - 2026-09-26
 
 ### Highlights
@@ -73,6 +92,7 @@ First public release.
 - **Auto-reconnect** after the light's motion sleep, and tap-to-retry on the field.
 - In-place updates from the Karoo's extension list.
 
-[Unreleased]: https://github.com/tiagodias00/igpsport-karoo/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tiagodias00/igpsport-karoo/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/tiagodias00/igpsport-karoo/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/tiagodias00/igpsport-karoo/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tiagodias00/igpsport-karoo/releases/tag/v0.1.0

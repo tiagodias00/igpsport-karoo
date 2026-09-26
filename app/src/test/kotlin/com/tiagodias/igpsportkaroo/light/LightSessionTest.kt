@@ -34,6 +34,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.concurrent.thread
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LightSessionTest {
@@ -110,6 +111,21 @@ class LightSessionTest {
             payload += ProtoWire.messageField(6, entry)
         }
         val header = Hex.decode("01 6A 01 FF 02 FF FF 00 00 00 01 FF FF FF FF FF FF FF FF 00")
+        header[8] = payload.size.toByte()
+        header[9] = Crc8.maxim(payload).toByte()
+        header[19] = Crc8.maxim(header, 0, 19).toByte()
+        return header + payload
+    }
+
+    /** A smart-config read-back like the light's own, for [configs] (id to status), in order. */
+    private fun smartConfigsFrame(configs: Map<Int, Int>): ByteArray {
+        var payload = ProtoWire.varintField(1, 106) + ProtoWire.varintField(2, 2) + ProtoWire.varintField(3, 4)
+        configs.forEach { (id, status) ->
+            var entry = ProtoWire.varintField(1, id.toLong())
+            if (status != SmartConfig.OFF) entry += ProtoWire.varintField(2, status.toLong())
+            payload += ProtoWire.messageField(9, entry)
+        }
+        val header = Hex.decode("01 6A 04 FF 02 FF FF 00 00 00 01 FF FF FF FF FF FF FF FF 00")
         header[8] = payload.size.toByte()
         header[9] = Crc8.maxim(payload).toByte()
         header[19] = Crc8.maxim(header, 0, 19).toByte()
@@ -1184,5 +1200,429 @@ class LightSessionTest {
         link.events.tryEmit(LinkEvent.Disconnected)
         runCurrent()
         assertFalse(session.restoreCustomMode(c1Steady))
+    }
+
+    // --- OFF stays off: auto sleep is paused while the light is off, so moving it can't wake it back on. ---
+
+    /** Auto light off (manual), auto sleep on: the light's factory smart feature. */
+    private val sleepOn = smartConfigsFrame(linkedMapOf(SmartConfig.AUTO_LIGHT to 0, SmartConfig.AUTO_SLEEP to 1))
+    private val sleepOff = smartConfigsFrame(linkedMapOf(SmartConfig.AUTO_LIGHT to 0, SmartConfig.AUTO_SLEEP to 0))
+    private val pauseSleep = listOf(
+        hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_SLEEP, SmartConfig.OFF)),
+        hex(IgpsProtocol.readSmartConfigs()),
+    )
+    private val resumeSleep = listOf(
+        hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_SLEEP, SmartConfig.ON)),
+        hex(IgpsProtocol.readSmartConfigs()),
+    )
+
+    /** A connected session whose saved sleep pause starts at [sleepPause]; saves go to [saved]. */
+    private fun TestScope.sleepSession(
+        link: FakeLink,
+        saved: MutableList<SleepPause> = mutableListOf(),
+        sleepPause: SleepPause = SleepPause.NONE,
+    ): LightSession {
+        val session = LightSession(
+            link, "AA:BB:CC:DD:EE:FF", backgroundScope,
+            now = { testScheduler.currentTime },
+            sleepPause = sleepPause,
+            onSleepPauseChanged = { saved += it },
+        )
+        session.start()
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        return session
+    }
+
+    /** A session that has switched the light (HIGH, auto sleep on) off, so its auto sleep is paused. */
+    private fun TestScope.pausedSession(link: FakeLink, saved: MutableList<SleepPause> = mutableListOf()): LightSession {
+        val session = sleepSession(link, saved)
+        report(link, vs1200sDeclared, sleepOn, stateMode(1))
+        assertTrue(session.selectMode(LightModes.OFF))
+        return session
+    }
+
+    @Test
+    fun `off pauses auto sleep when the light has it on, and saves that`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = sleepSession(link, saved)
+        report(link, vs1200sDeclared, sleepOn, stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectMode(LightModes.OFF))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(0))) + pauseSleep, link.sent)
+        assertTrue(session.state.value.poweredOff)
+        assertTrue(session.state.value.autoSleepPaused)
+        assertEquals(SmartConfig.OFF, session.state.value.smartConfigs[SmartConfig.AUTO_SLEEP]) // the real state
+        assertEquals(listOf(SleepPause.PAUSED), saved)
+    }
+
+    @Test
+    fun `off leaves auto sleep alone when the user had it off`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = sleepSession(link, saved)
+        report(link, vs1200sDeclared, sleepOff, stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectMode(LightModes.OFF))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(0))), link.sent)
+        assertFalse(session.state.value.autoSleepPaused)
+        link.sent.clear()
+        assertTrue(session.selectMode(1)) // never switched on: it was the user's choice
+        assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+        assertEquals(emptyList<SleepPause>(), saved)
+    }
+
+    @Test
+    fun `off leaves auto sleep alone while the light's smart configs are unknown`() = runTest {
+        val link = FakeLink()
+        val session = sleepSession(link)
+        report(link, vs1200sDeclared, stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectMode(LightModes.OFF))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(0))), link.sent)
+        assertFalse(session.state.value.autoSleepPaused)
+    }
+
+    @Test
+    fun `a refused pause write leaves nothing paused`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = sleepSession(link, saved)
+        report(link, vs1200sDeclared, sleepOn, stateMode(1))
+        link.sendsLeft = 1 // OFF goes out, the pause doesn't
+        assertTrue(session.selectMode(LightModes.OFF)) // the light is off all the same
+        assertFalse(session.state.value.autoSleepPaused)
+        assertEquals(emptyList<SleepPause>(), saved)
+    }
+
+    @Test
+    fun `selecting a mode after off resumes auto sleep, once`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        link.sent.clear()
+        assertTrue(session.selectMode(2))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(2))) + resumeSleep + hex(IgpsProtocol.readCurrentMode()), link.sent)
+        assertFalse(session.state.value.poweredOff)
+        assertFalse(session.state.value.autoSleepPaused) // no longer "paused while off": the hint goes
+        assertEquals(SmartConfig.ON, session.state.value.smartConfigs[SmartConfig.AUTO_SLEEP])
+        assertEquals(listOf(SleepPause.PAUSED, SleepPause.RESUMING), saved)
+
+        link.sent.clear()
+        assertTrue(session.selectMode(1)) // already resuming: nothing more to switch on
+        assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
+    fun `the pause ends only once the light confirms auto sleep is back on`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        session.selectMode(2)
+        report(link, sleepOff) // the late read-back of the pause: says nothing about the resume
+        assertEquals(listOf(SleepPause.PAUSED, SleepPause.RESUMING), saved)
+        report(link, sleepOn) // the resume's read-back
+        assertEquals(listOf(SleepPause.PAUSED, SleepPause.RESUMING, SleepPause.NONE), saved)
+        assertFalse(session.state.value.autoSleepPaused)
+    }
+
+    @Test
+    fun `a resume the light never confirmed is sent again on the next connect, without assuming off`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        session.selectMode(2) // queued, then the link drops before it goes out
+        advanceTimeBy(30_000)
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        link.sent.clear()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        assertTrue(link.sent.containsAll(resumeSleep))
+        assertFalse(session.state.value.poweredOff) // it had left OFF: this is not "still paused while off"
+        report(link, respMode3) // the connect's mode read-back is taken as it is
+        assertFalse(session.state.value.poweredOff)
+        assertEquals(3, session.state.value.mode)
+        report(link, sleepOn)
+        assertEquals(SleepPause.NONE, saved.last())
+    }
+
+    @Test
+    fun `a restarted session with a pending resume sends it again on connect`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = sleepSession(link, saved, sleepPause = SleepPause.RESUMING)
+        assertEquals(resumeSleep, link.sent.take(2))
+        assertFalse(session.state.value.poweredOff)
+        assertFalse(session.state.value.autoSleepPaused)
+        report(link, sleepOn)
+        assertEquals(listOf(SleepPause.NONE), saved)
+    }
+
+    @Test
+    fun `off while a resume is pending pauses again`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        session.selectMode(2)
+        link.sent.clear()
+        assertTrue(session.selectMode(LightModes.OFF))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(0))) + pauseSleep, link.sent)
+        assertTrue(session.state.value.autoSleepPaused)
+        report(link, sleepOn) // the resume's read-back, answered before the new pause: not a confirmation now
+        assertTrue(session.state.value.autoSleepPaused)
+        assertEquals(listOf(SleepPause.PAUSED, SleepPause.RESUMING, SleepPause.PAUSED), saved)
+    }
+
+    @Test
+    fun `off twice pauses auto sleep once`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        link.sent.clear()
+        assertTrue(session.selectMode(LightModes.OFF))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(0))), link.sent)
+        assertTrue(session.state.value.autoSleepPaused)
+        assertEquals(listOf(SleepPause.PAUSED), saved)
+    }
+
+    @Test
+    fun `every way of turning the light on resumes auto sleep`() = runTest {
+        val ways: List<Pair<String, (LightSession) -> Boolean>> = listOf(
+            "SOLID" to { s -> s.selectSolid() },
+            "FLASH" to { s -> s.selectFlash() },
+            "AUTO" to { s -> s.selectAuto() },
+            "next mode" to { s -> s.nextMode() },
+            "manual mode (ride start, custom preview)" to { s -> s.selectManualMode(64) },
+        )
+        ways.forEach { (name, turnOn) ->
+            val link = FakeLink()
+            val session = pausedSession(link)
+            link.sent.clear()
+            assertTrue(name, turnOn(session))
+            assertTrue(name, link.sent.containsAll(resumeSleep))
+            assertFalse(name, session.state.value.autoSleepPaused)
+            assertFalse(name, session.state.value.poweredOff)
+        }
+    }
+
+    @Test
+    fun `AUTO with no steady level to light keeps the pause`() = runTest {
+        val link = FakeLink()
+        val session = sleepSession(link)
+        report(link, declaredFrame(linkedMapOf(4 to true, 5 to true)), sleepOn, stateMode(4)) // flash levels only
+        session.selectMode(LightModes.OFF)
+        assertTrue(session.selectAuto()) // auto light on, but nothing to switch the light on with
+        assertTrue(session.state.value.poweredOff)
+        assertTrue(session.state.value.autoSleepPaused)
+    }
+
+    @Test
+    fun `a button press on the light after off ends off and resumes auto sleep`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        advanceTimeBy(5_000)
+        link.sent.clear()
+        report(link, vs1200sButtonMid)
+        assertFalse(session.state.value.poweredOff)
+        assertFalse(session.state.value.autoSleepPaused)
+        assertEquals(resumeSleep, link.sent)
+        assertEquals(listOf(SleepPause.PAUSED, SleepPause.RESUMING), saved)
+    }
+
+    @Test
+    fun `a lit run-time frame after off also resumes auto sleep`() = runTest {
+        val link = FakeLink()
+        val session = pausedSession(link)
+        advanceTimeBy(30_000) // past the settle window, before the 60 s poll
+        link.sent.clear()
+        report(link, logRunTimeState525)
+        assertFalse(session.state.value.poweredOff)
+        assertEquals(resumeSleep, link.sent)
+    }
+
+    @Test
+    fun `the light's echo right after off keeps auto sleep paused`() = runTest {
+        val link = FakeLink()
+        val session = pausedSession(link)
+        advanceTimeBy(500)
+        link.sent.clear()
+        report(link, vs1200sEchoMode4, sleepOff) // the echo, then the read-back of our pause
+        assertTrue(session.state.value.poweredOff)
+        assertTrue(session.state.value.autoSleepPaused)
+        assertEquals(emptyList<String>(), link.sent)
+    }
+
+    @Test
+    fun `the user switching auto sleep on while it is paused wins`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        assertTrue(session.setSmartConfig(SmartConfig.AUTO_SLEEP, on = true))
+        assertFalse(session.state.value.autoSleepPaused)
+        assertTrue(session.state.value.poweredOff) // still off: only the switch changed
+        assertEquals(listOf(SleepPause.PAUSED, SleepPause.NONE), saved)
+        link.sent.clear()
+        assertTrue(session.selectMode(1))
+        assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
+    fun `the user switching auto sleep off while it is paused keeps it off`() = runTest {
+        val link = FakeLink()
+        val session = pausedSession(link)
+        assertTrue(session.setSmartConfig(SmartConfig.AUTO_SLEEP, on = false))
+        assertFalse(session.state.value.autoSleepPaused)
+        link.sent.clear()
+        assertTrue(session.selectMode(1)) // not switched back on: the user chose off
+        assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+        assertEquals(SmartConfig.OFF, session.state.value.smartConfigs[SmartConfig.AUTO_SLEEP])
+    }
+
+    @Test
+    fun `the user's switch also clears a pending resume`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        session.selectMode(2)
+        assertTrue(session.setSmartConfig(SmartConfig.AUTO_SLEEP, on = false))
+        assertEquals(SleepPause.NONE, saved.last())
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        link.sent.clear()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        assertFalse(link.sent.contains(resumeSleep.first())) // nothing re-sent against the user's choice
+    }
+
+    @Test
+    fun `another smart switch leaves the pause alone`() = runTest {
+        val link = FakeLink()
+        val session = pausedSession(link)
+        assertTrue(session.setSmartConfig(SmartConfig.AUTO_LOW, on = false))
+        assertTrue(session.state.value.autoSleepPaused)
+    }
+
+    @Test
+    fun `a failed resume keeps the pause for the next try`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        link.sendsLeft = 1 // the mode goes out, the link refuses the resume
+        session.selectMode(2)
+        assertEquals(listOf(SleepPause.PAUSED), saved)
+        link.sendsLeft = Int.MAX_VALUE
+        link.sent.clear()
+        assertTrue(session.selectMode(1))
+        assertTrue(link.sent.containsAll(resumeSleep))
+        assertFalse(session.state.value.autoSleepPaused)
+    }
+
+    @Test
+    fun `a reconnect while auto sleep is paused keeps the light off`() = runTest {
+        val link = FakeLink()
+        val session = pausedSession(link)
+        advanceTimeBy(60_000)
+        link.events.tryEmit(LinkEvent.Disconnected) // e.g. out of range: it couldn't sleep, so it is still off
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        link.sent.clear()
+        report(link, respMode3, sleepOff) // the read-backs sent on connect: its remembered mode
+        assertTrue(session.state.value.poweredOff)
+        assertTrue(session.state.value.autoSleepPaused)
+        assertEquals(emptyList<String>(), link.sent)
+    }
+
+    @Test
+    fun `a restarted session with the pause saved treats the light as still off`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = sleepSession(link, saved, sleepPause = SleepPause.PAUSED)
+        assertTrue(session.state.value.poweredOff)
+        assertTrue(session.state.value.autoSleepPaused)
+        report(link, vs1200sDeclared, respMode3, sleepOff) // the read-backs sent on connect
+        assertTrue(session.state.value.poweredOff)
+        link.sent.clear()
+        assertTrue(session.selectMode(1))
+        assertTrue(link.sent.containsAll(resumeSleep))
+        assertFalse(session.state.value.autoSleepPaused)
+        assertEquals(listOf(SleepPause.RESUMING), saved)
+    }
+
+    @Test
+    fun `after a restart with the pause saved, a later button press ends off and resumes auto sleep`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = sleepSession(link, saved, sleepPause = SleepPause.PAUSED)
+        report(link, vs1200sDeclared, respMode3, sleepOff)
+        advanceTimeBy(5_000)
+        link.sent.clear()
+        report(link, vs1200sButtonMid)
+        assertFalse(session.state.value.poweredOff)
+        assertFalse(session.state.value.autoSleepPaused)
+        assertEquals(resumeSleep, link.sent)
+        assertEquals(listOf(SleepPause.RESUMING), saved)
+    }
+
+    @Test
+    fun `stopping the session keeps the saved pause`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        val session = pausedSession(link, saved)
+        session.stop()
+        assertEquals(listOf(SleepPause.PAUSED), saved) // the next session (or process) still knows to resume it
+        assertTrue(session.state.value.autoSleepPaused)
+    }
+
+    @Test
+    fun `a failing save is contained and tried again`() = runTest {
+        val link = FakeLink()
+        val saved = mutableListOf<SleepPause>()
+        var failures = 1
+        val session = LightSession(
+            link, "AA:BB:CC:DD:EE:FF", backgroundScope,
+            now = { testScheduler.currentTime },
+            onSleepPauseChanged = {
+                if (failures-- > 0) throw IllegalStateException("disk full")
+                saved += it
+            },
+        )
+        session.start()
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        report(link, vs1200sDeclared, sleepOn, stateMode(1))
+        assertTrue(session.selectMode(LightModes.OFF)) // the save throws: the command must not
+        assertEquals(emptyList<SleepPause>(), saved)
+        assertTrue(session.setSmartConfig(SmartConfig.AUTO_LOW, on = true)) // the next command saves it
+        assertEquals(listOf(SleepPause.PAUSED), saved)
+    }
+
+    @Test(timeout = 10_000)
+    fun `the pause is saved outside the command lock`() = runBlocking {
+        val link = FakeLink()
+        lateinit var session: LightSession
+        var lockFreeWhileSaving = false
+        session = LightSession(
+            link, "AA:BB:CC:DD:EE:FF", this,
+            onSleepPauseChanged = {
+                // Saving may block (a first SharedPreferences read): meanwhile another thread must still get the
+                // command lock (reconnectNow takes it, and returns at once while connected). Held, this deadlocks.
+                thread { session.reconnectNow() }.join()
+                lockFreeWhileSaving = true
+            },
+        )
+        session.start()
+        yield()
+        link.events.tryEmit(LinkEvent.Connected)
+        link.events.tryEmit(LinkEvent.Fragment(sleepOn))
+        yield()
+        assertTrue(session.selectMode(LightModes.OFF))
+        assertTrue(lockFreeWhileSaving)
+        session.stop()
     }
 }
