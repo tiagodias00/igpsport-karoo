@@ -38,4 +38,9 @@
     <string name="control_title">Light controls</string>
     <string name="low_battery_title">Light battery %1$d%%</string>
     <string name="low_battery_detail">Your iGPSPORT light is running low.</string>
+    <string name="section_about">About</string>
+    <string name="about_version">iGPSPORT Light for Karoo · v%1$s</string>
+    <string name="about_author">Made by Tiago Dias — github.com/tiagodias00</string>
+    <string name="about_protocol">Protocol research: cparfait/Bike-Light-Control (MIT)</string>
+    <string name="about_disclaimer">Not affiliated with or endorsed by iGPSPORT.</string>
 </resources>

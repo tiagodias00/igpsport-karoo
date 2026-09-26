@@ -1,8 +1,11 @@
 package com.tiagodias.igpsportkaroo
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -75,6 +78,9 @@ class MainActivity : Activity() {
 
         content.addView(section(R.string.section_ride))
         addRideSettings(content)
+
+        content.addView(section(R.string.section_about))
+        addAboutSection(content)
 
         setContentView(ScrollView(this).apply { addView(content) })
 
@@ -174,6 +180,27 @@ class MainActivity : Activity() {
         content.addView(settingSwitch(R.string.low_battery_alerts, settings.lowBatteryAlerts) { settings.lowBatteryAlerts = it })
     }
 
+    /** Small, dim credits at the bottom of the app page: version, author (tappable), protocol research, disclaimer. */
+    private fun addAboutSection(content: LinearLayout) {
+        content.addView(dimText(getString(R.string.about_version, BuildConfig.VERSION_NAME)))
+        content.addView(dimText(getString(R.string.about_author)).apply { setOnClickListener { openGithub() } })
+        content.addView(dimText(getString(R.string.about_protocol)))
+        content.addView(dimText(getString(R.string.about_disclaimer)))
+    }
+
+    private fun dimText(value: String) = text(size = 12f).apply {
+        text = value
+        alpha = 0.6f
+    }
+
+    private fun openGithub() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL)))
+        } catch (e: ActivityNotFoundException) {
+            Timber.w("No browser available to open %s", GITHUB_URL)
+        }
+    }
+
     private fun render(state: LightState) {
         if (state == renderedState) return
         renderedState = state
@@ -257,5 +284,6 @@ class MainActivity : Activity() {
         private const val REQUEST_PERMISSIONS = 1
         private const val REFRESH_MS = 500L
         private const val DISABLED_ALPHA = 0.4f
+        private const val GITHUB_URL = "https://github.com/tiagodias00"
     }
 }
