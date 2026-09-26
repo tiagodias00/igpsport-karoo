@@ -29,7 +29,8 @@ class LightSession(
 
     private val assembler = FrameAssembler()
     private var job: Job? = null
-    @Volatile private var offCommandAt: Long? = null
+    private val commandLock = Any()
+    private var offCommandAt: Long? = null
 
     fun start() {
         if (job != null) return
@@ -71,8 +72,11 @@ class LightSession(
     /**
      * Selects [mode] ([LightModes.OFF] switches the light off), enabling it on the light first if it is
      * declared but disabled. False when not connected.
+     *
+     * Thread-safe: calls are serialized on [commandLock], so one call's command sequence always finishes
+     * (all its frames sent) before another's starts — command sequences never interleave on the wire.
      */
-    fun selectMode(mode: Int): Boolean {
+    fun selectMode(mode: Int): Boolean = synchronized(commandLock) {
         if (mode == LightModes.OFF) {
             if (!link.send(IgpsProtocol.setMode(LightModes.OFF))) return false
             // No read-back: the light would answer with its remembered mode, never 0.
@@ -91,16 +95,18 @@ class LightSession(
         return link.send(IgpsProtocol.readCurrentMode())
     }
 
-    fun nextMode(): Boolean {
+    /** Also serialized on [commandLock] (reentrant): the read of the current mode and the [selectMode] call
+     * that follows it happen as one atomic step relative to other threads. */
+    fun nextMode(): Boolean = synchronized(commandLock) {
         val s = _state.value
         val next = LightModes.next(if (s.poweredOff) null else s.mode, s.enabledModes) ?: return false
-        return selectMode(next)
+        selectMode(next)
     }
 
     /** A mode report ends "off" unless it is the echo the light sends right after our OFF command. */
     private fun applyReport(state: LightState, update: LightUpdate): LightState {
         val applied = state.apply(update)
-        val settling = offCommandAt?.let { now() - it < OFF_SETTLE_MS } ?: false
+        val settling = synchronized(commandLock) { offCommandAt?.let { now() - it < OFF_SETTLE_MS } ?: false }
         return if (state.poweredOff && update.mode != null && !settling) applied.copy(poweredOff = false) else applied
     }
 

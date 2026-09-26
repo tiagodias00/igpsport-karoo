@@ -5,9 +5,12 @@ import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -21,11 +24,12 @@ import org.junit.Test
 class LightSessionTest {
     private class FakeLink : LightLink {
         val events = MutableSharedFlow<LinkEvent>(extraBufferCapacity = 64)
+        private val sendLock = Any()
         val sent = mutableListOf<String>()
         var accepting = true
         override fun connect(address: String): Flow<LinkEvent> = events
         override fun send(frame: ByteArray): Boolean {
-            if (accepting) sent += Hex.encode(frame)
+            if (accepting) synchronized(sendLock) { sent += Hex.encode(frame) }
             return accepting
         }
     }
@@ -204,5 +208,42 @@ class LightSessionTest {
         link.sent.clear()
         assertTrue(session.nextMode()) // enabled [1, 3, 17]; off -> first = 1
         assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
+    fun `concurrent commands never interleave their frames`() = runBlocking {
+        val link = FakeLink()
+        val session = LightSession(link, "AA:BB:CC:DD:EE:FF", this)
+        val iterations = 200
+        val onCommand = launch(Dispatchers.Default) { repeat(iterations) { session.selectMode(1) } }
+        val offCommand = launch(Dispatchers.Default) { repeat(iterations) { session.selectMode(LightModes.OFF) } }
+        onCommand.join()
+        offCommand.join()
+
+        val setMode1 = hex(IgpsProtocol.setMode(1))
+        val setModeOff = hex(IgpsProtocol.setMode(LightModes.OFF))
+        val readCurrent = hex(IgpsProtocol.readCurrentMode())
+
+        // Every setMode(1) must be immediately followed by its own readCurrentMode: if two selectMode(1)
+        // calls ever interleaved, another frame (setModeOff or a second setMode1) would land between them.
+        var i = 0
+        var setMode1Count = 0
+        var setModeOffCount = 0
+        while (i < link.sent.size) {
+            when (link.sent[i]) {
+                setMode1 -> {
+                    assertEquals(readCurrent, link.sent[i + 1])
+                    setMode1Count++
+                    i += 2
+                }
+                setModeOff -> {
+                    setModeOffCount++
+                    i += 1
+                }
+                else -> throw AssertionError("unexpected frame at $i: ${link.sent[i]}")
+            }
+        }
+        assertEquals(iterations, setMode1Count)
+        assertEquals(iterations, setModeOffCount)
     }
 }
