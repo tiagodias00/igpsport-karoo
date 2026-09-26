@@ -103,27 +103,20 @@ class FieldUiTest {
     }
 
     @Test
-    fun `auto detail shows the running mode`() {
-        // Brightness alone read as battery on the Karoo: it only follows the mode, and only on the regular fields.
-        val dimmed = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).button(Kind.AUTO)
-        assertEquals("HIGH 95%", dimmed.detail)
-        assertEquals("HI", dimmed.shortDetail)
+    fun `auto detail shows only the running mode`() {
+        // The light doesn't reliably report brightness % or daylight auto-off (docs/vs1200s-findings.md), so
+        // neither is shown here regardless of what the light last reported for them.
+        val running = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).button(Kind.AUTO)
+        assertEquals("HIGH", running.detail)
+        assertEquals("HI", running.shortDetail)
 
-        val noBrightness = FieldUi.from(autoOn).button(Kind.AUTO)
-        assertEquals("HIGH", noBrightness.detail)
-        assertEquals("HI", noBrightness.shortDetail)
+        val outputOff = FieldUi.from(autoOn.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
+        assertEquals("HIGH", outputOff.detail)
+        assertEquals("HI", outputOff.shortDetail)
 
         val unknownMode = FieldUi.from(autoOn.copy(mode = null, autoBrightnessPercent = 95)).button(Kind.AUTO)
         assertEquals("", unknownMode.detail)
         assertEquals("", unknownMode.shortDetail)
-    }
-
-    @Test
-    fun `auto detail says when daylight switched the output off`() {
-        val daylight = FieldUi.from(autoOn.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
-        assertEquals("off (day)", daylight.detail)
-        assertEquals("off", daylight.shortDetail)
-        assertEquals("AUTO off", daylight.compactText(maxChars = 8))
     }
 
     @Test
@@ -135,10 +128,11 @@ class FieldUiTest {
     }
 
     @Test
-    fun `footer says when auto light has switched the output off`() {
-        assertEquals("Auto off (daylight)  ·  78%", FieldUi.from(autoOn.copy(outputOff = true)).footer)
-        assertEquals("Auto off (daylight)", FieldUi.from(autoOn.copy(outputOff = true, batteryPercent = null)).footer)
-        // A stale output-off without auto light is not shown.
+    fun `footer never mentions daylight auto-off`() {
+        // The light doesn't reliably report this (docs/vs1200s-findings.md): the normal battery/run-time
+        // footer is shown regardless of outputOff.
+        assertEquals("78%  ·  3h 20m left", FieldUi.from(autoOn.copy(outputOff = true)).footer)
+        assertEquals("3h 20m left", FieldUi.from(autoOn.copy(outputOff = true, batteryPercent = null)).footer)
         assertEquals("78%  ·  3h 20m left", FieldUi.from(high.copy(outputOff = true)).footer)
     }
 
@@ -160,7 +154,8 @@ class FieldUiTest {
     @Test
     fun `headline shows the active button`() {
         assertEquals("SOLID · HIGH", FieldUi.from(high).headline)
-        assertEquals("AUTO · HIGH 95%", FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).headline)
+        // Brightness % never appears, even when the light last reported one (docs/vs1200s-findings.md).
+        assertEquals("AUTO · HIGH", FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).headline)
         assertEquals("OFF", FieldUi.from(high.copy(poweredOff = true)).headline)
     }
 

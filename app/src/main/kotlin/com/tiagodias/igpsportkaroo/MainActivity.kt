@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var permissionStatus: TextView
     private lateinit var headline: TextView
     private lateinit var footer: TextView
+    private lateinit var autoNote: TextView
     private val controls = linkedMapOf<FieldUi.Kind, Button>()
     private lateinit var retry: Button
     private lateinit var features: LinearLayout
@@ -62,6 +63,7 @@ class MainActivity : Activity() {
         permissionStatus = text(size = 14f).also(content::addView)
         headline = text(size = 26f, bold = true).also(content::addView)
         footer = text(size = 16f).also(content::addView)
+        autoNote = text(size = 13f).apply { alpha = 0.7f }.also(content::addView)
         addControls(content)
         retry = Button(this).apply {
             setText(R.string.retry_connection)
@@ -179,6 +181,11 @@ class MainActivity : Activity() {
         headline.text = ui.headline
         // While searching the headline says so; the field's "tap to retry" footer is the Retry button here.
         footer.text = if (ui.connected) ui.footer else ""
+        // The light can't reliably report its own auto brightness/off state (docs/vs1200s-findings.md), so this
+        // is the only place that warns about it, instead of showing unreliable numbers on the buttons.
+        val showAutoNote = ui.connected && state.autoLightOn
+        autoNote.text = if (showAutoNote) getString(R.string.auto_light_note) else ""
+        autoNote.visibility = if (showAutoNote) View.VISIBLE else View.GONE
         ui.buttons.forEach { b ->
             val view = controls.getValue(b.kind)
             view.text = if (b.detail.isEmpty()) b.label else "${b.label}\n${b.detail}"

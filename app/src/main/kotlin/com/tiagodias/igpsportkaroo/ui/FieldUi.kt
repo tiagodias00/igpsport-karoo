@@ -31,7 +31,7 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
     /** While the light is not connected, tapping the footer forces an immediate reconnect. */
     val reconnectable: Boolean get() = !connected
 
-    /** The app page's status line: the active button ("SOLID · HIGH", "AUTO · HIGH 95%", "OFF") or the search state. */
+    /** The app page's status line: the active button ("SOLID · HIGH", "AUTO · HIGH", "OFF") or the search state. */
     val headline: String
         get() {
             if (!connected) return "Searching for light…"
@@ -46,7 +46,6 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
             val footer = when {
                 !state.connected -> "Searching for light… tap to retry"
                 state.poweredOff -> listOfNotNull("Light off", battery).joinToString(SEPARATOR)
-                state.outputOff && state.autoLightOn -> listOfNotNull("Auto off (daylight)", battery).joinToString(SEPARATOR)
                 else -> listOfNotNull(battery, state.remainingMinutes?.let { "${formatMinutes(it)} left" })
                     .joinToString(SEPARATOR).ifEmpty { "Connected" }
             }
@@ -94,31 +93,22 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
         }
 
         /**
-         * AUTO shows the mode auto light is running ("HIGH 95%" with the brightness, "HI" compact). A bare
-         * brightness % read as the battery level. Blank while auto is off: its reports would be stale.
+         * AUTO shows the mode auto light is running ("HIGH", "HI" compact) — nothing else. On-device testing
+         * (docs/vs1200s-findings.md) found the light never reliably reports when it switches itself off in
+         * daylight, nor does its brightness % track that; showing either was misleading, so neither is shown
+         * here any more. Blank while auto is off: its reports would be stale.
          */
         private fun auto(state: LightState): Button {
             val on = state.autoLightOn
             val mode = state.mode
-            val brightness = state.autoBrightnessPercent
             return Button(
                 kind = Kind.AUTO,
                 label = "AUTO",
-                detail = when {
-                    !on -> ""
-                    state.outputOff -> "off (day)"
-                    mode == null -> ""
-                    brightness != null -> "${LightModes.label(mode)} $brightness%"
-                    else -> LightModes.label(mode)
-                },
+                detail = if (on) mode?.let(LightModes::label).orEmpty() else "",
                 active = state.connected && !state.poweredOff && state.autoLightOn,
                 available = state.smartConfigs.isEmpty() || SmartConfig.AUTO_LIGHT in state.smartConfigs,
                 shortLabel = "AUTO",
-                shortDetail = when {
-                    !on -> ""
-                    state.outputOff -> "off"
-                    else -> mode?.let(LightModes::shortLabel).orEmpty()
-                },
+                shortDetail = if (on) mode?.let(LightModes::shortLabel).orEmpty() else "",
             )
         }
 

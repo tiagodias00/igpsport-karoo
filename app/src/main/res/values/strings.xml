@@ -19,6 +19,7 @@
     <string name="perm_granted">Bluetooth permission granted. Pair your light in Sensors → Add sensor.</string>
     <string name="open_settings">Open</string>
     <string name="retry_connection">Retry connection</string>
+    <string name="auto_light_note">The light adjusts its brightness itself and may switch off in bright daylight.</string>
     <string name="section_features">Light features</string>
     <string name="features_unknown">Connect the light to change its features</string>
     <string name="feature_auto_light">Auto light</string>
