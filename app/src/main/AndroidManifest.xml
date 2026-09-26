@@ -32,6 +32,12 @@
             </intent-filter>
         </activity>
 
+        <!-- The custom light-mode editor, opened from the app page; inherits the application theme. -->
+        <activity
+            android:name=".CustomModesActivity"
+            android:exported="false"
+            android:label="@string/custom_title" />
+
         <service
             android:name=".IgpsExtension"
             android:exported="true"

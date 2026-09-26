@@ -3,6 +3,8 @@ package com.tiagodias.igpsportkaroo
 import android.content.Context
 import com.tiagodias.igpsportkaroo.automation.AutomationSettings
 import com.tiagodias.igpsportkaroo.automation.RideStart
+import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
+import com.tiagodias.igpsportkaroo.protocol.CustomModeText
 
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("igps_settings", Context.MODE_PRIVATE)
@@ -30,6 +32,15 @@ class Settings(context: Context) {
     /** Persists one ride-state event: [recording] and [at] (wall clock, ms) together. */
     fun saveRecording(recording: Boolean, at: Long) {
         prefs.edit().putBoolean("last_recording", recording).putLong("last_recording_at", at).apply()
+    }
+
+    /** The first config ever read for custom slot [mode]: "Restore original" goes back to it (plan decision D3). */
+    fun customOriginal(mode: Int): CustomModeConfig? = CustomModeText.decode(prefs.getString("custom_original_$mode", null))
+
+    /** Keeps [config] as its slot's original, unless one is already kept. */
+    fun rememberCustomOriginal(config: CustomModeConfig) {
+        val key = "custom_original_${config.mode}"
+        if (!prefs.contains(key)) prefs.edit().putString(key, CustomModeText.encode(config)).apply()
     }
 
     fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts, offAtRideEnd)
