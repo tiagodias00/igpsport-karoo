@@ -3,6 +3,10 @@ package com.tiagodias.igpsportkaroo.light
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.Crc8
+import com.tiagodias.igpsportkaroo.protocol.CustomLight
+import com.tiagodias.igpsportkaroo.protocol.CustomMode
+import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
+import com.tiagodias.igpsportkaroo.protocol.CustomPattern
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
@@ -835,5 +839,126 @@ class LightSessionTest {
         // start() launched an infinite collector job (runLink() never completes on its own): stop() cancels it
         // so this runBlocking block — which otherwise waits for every child coroutine — can actually return.
         session.stop()
+    }
+
+    // Derived with tools/probe/igps.py (docs/custom-modes-research.md §8): slot 64, steady main 30 %,
+    // flash main 100 % / 2 s / 30 %; selected steady resp. flash.
+    private val customReplySteady = Hex.decode(
+        "01 6A 03 FF 02 FF FF 00 24 42 01 FF FF FF FF FF FF FF FF C1 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 1E " +
+            "1A 10 08 01 12 04 08 02 10 64 1A 02 08 02 22 02 08 1E",
+    )
+    private val customReplyFlash = Hex.decode(
+        "01 6A 03 FF 02 FF FF 00 26 86 01 FF FF FF FF FF FF FF FF 1A 08 6A 10 02 18 03 42 1E 08 40 10 01 1A 06 12 04 08 02 10 1E " +
+            "1A 10 08 01 12 04 08 02 10 64 1A 02 08 02 22 02 08 1E",
+    )
+    // Captured from the real VS1200S (docs/vs1200s-findings.md, restore point): slot 64 plays steady;
+    // steady main 17 %, flash main 20 % / 4 s / 25 %.
+    private val vs1200sCustom64 = Hex.decode(
+        "01 6A 03 FF 02 FF FF 00 24 F3 01 FF FF FF FF FF FF FF FF 89 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 11 " +
+            "1A 10 08 01 12 04 08 02 10 14 1A 02 08 04 22 02 08 19",
+    )
+    private val c1Steady = CustomModeConfig(
+        64, CustomMode.STEADY,
+        listOf(
+            CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30))),
+            CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 2, 30),
+        ),
+    )
+
+    @Test
+    fun `reads the configs of declared custom modes`() = runTest {
+        val link = FakeLink()
+        connectedSession(link)
+        link.sent.clear()
+        report(link, vs1200sDeclared)
+        assertEquals(listOf(hex(IgpsProtocol.readCustomMode(64))), link.sent)
+    }
+
+    @Test
+    fun `reads no custom config when the light declares no custom mode`() = runTest {
+        val link = FakeLink()
+        connectedSession(link)
+        link.sent.clear()
+        report(link, respDeclared) // 1, 3, 4, 17: no custom slot
+        assertEquals(emptyList<String>(), link.sent)
+    }
+
+    @Test
+    fun `stores a custom-mode reply`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, customReplySteady)
+        assertEquals(mapOf(64 to c1Steady), session.state.value.customModes)
+    }
+
+    @Test
+    fun `stores the captured VS1200S custom-mode reply`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sCustom64)
+        val expected = CustomModeConfig(
+            64, CustomMode.STEADY,
+            listOf(
+                CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 17))),
+                CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 20)), 4, 25),
+            ),
+        )
+        assertEquals(mapOf(64 to expected), session.state.value.customModes)
+    }
+
+    @Test
+    fun `SOLID skips a custom mode that flashes and FLASH cycles into it`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, customReplyFlash, stateMode(5)) // FLASH LO, custom 64 flashes
+        link.sent.clear()
+        assertTrue(session.selectFlash()) // FL LO -> CUSTOM 1 (flash levels: 4, 5, 64)
+        assertEquals(hex(IgpsProtocol.setMode(64)), link.sent.first())
+        report(link, stateMode(64))
+        link.sent.clear()
+        assertTrue(session.selectSolid()) // not cycling from 64: goes to the brightest steady level
+        assertEquals(hex(IgpsProtocol.setMode(1)), link.sent.first())
+        report(link, stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectSolid()) // HIGH -> MID -> HIGH: never 64
+        assertEquals(hex(IgpsProtocol.setMode(2)), link.sent.first())
+        report(link, stateMode(2))
+        link.sent.clear()
+        assertTrue(session.selectSolid())
+        assertEquals(hex(IgpsProtocol.setMode(1)), link.sent.first())
+    }
+
+    @Test
+    fun `SOLID cycles into a custom mode that is steady`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, customReplySteady, stateMode(2)) // MID, custom 64 steady
+        link.sent.clear()
+        assertTrue(session.selectSolid())
+        assertEquals(hex(IgpsProtocol.setMode(64)), link.sent.first())
+        report(link, stateMode(64))
+        link.sent.clear()
+        assertTrue(session.selectFlash()) // 64 is steady: FLASH goes to its first level, not cycling from 64
+        assertEquals(hex(IgpsProtocol.setMode(4)), link.sent.first())
+    }
+
+    @Test
+    fun `FLASH cycles on from a custom mode that flashes`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, customReplyFlash, stateMode(64)) // in custom 64, which flashes
+        link.sent.clear()
+        assertTrue(session.selectFlash()) // flash levels 4, 5, 64: 64 wraps to FLASH HI
+        assertEquals(hex(IgpsProtocol.setMode(4)), link.sent.first())
+    }
+
+    @Test
+    fun `SOLID returns to the last steady level from a custom mode that flashes`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, customReplyFlash, stateMode(2), stateMode(64)) // MID, then flashing 64
+        link.sent.clear()
+        assertTrue(session.selectSolid()) // not in a steady mode: back to MID, not cycling from 64
+        assertEquals(hex(IgpsProtocol.setMode(2)), link.sent.first())
     }
 }

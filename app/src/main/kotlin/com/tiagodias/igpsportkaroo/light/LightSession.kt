@@ -3,6 +3,7 @@ package com.tiagodias.igpsportkaroo.light
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.AutoDimTracker
+import com.tiagodias.igpsportkaroo.protocol.CustomMode
 import com.tiagodias.igpsportkaroo.protocol.FrameAssembler
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
@@ -121,6 +122,10 @@ class LightSession(
                     val update = IgpsProtocol.parseFrame(frame)
                     frameLog?.invoke("rx ${Hex.encode(frame)} -> $update")
                     update?.let { u -> synchronized(commandLock) { _state.value = applyReport(_state.value, u) } }
+                    // Each declared custom slot's config decides whether it is SOLID or FLASH and how it's labelled.
+                    update?.declaredModes?.keys?.filter { it in CustomMode.SLOTS }?.forEach {
+                        link.send(IgpsProtocol.readCustomMode(it))
+                    }
                 }
             }
         }
@@ -180,10 +185,10 @@ class LightSession(
     }
 
     /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
-    fun selectSolid(): Boolean = selectManual(LightModes.STEADY, LightState::steadyLevels) { it.steadyLevel }
+    fun selectSolid(): Boolean = selectManual({ it.isSteady(it.mode) }, { it.steadyLevels }) { it.steadyLevel }
 
-    /** FLASH: the same as [selectSolid] for the flash levels. */
-    fun selectFlash(): Boolean = selectManual(LightModes.FLASHING, LightState::flashLevels) { it.flashLevel }
+    /** FLASH: the same as [selectSolid] for the flash levels (built-in flash modes, then custom slots that blink). */
+    fun selectFlash(): Boolean = selectManual({ it.isFlashing(it.mode) }, { it.flashLevels }) { it.flashLevel }
 
     /** AUTO: switches auto light on, and the light itself on (current steady level) if we switched it off. */
     fun selectAuto(): Boolean = synchronized(commandLock) {
@@ -195,17 +200,17 @@ class LightSession(
     }
 
     /**
-     * Goes to a mode of [group]: the next of [levels] when the light is already in the group (on, manual),
-     * else [current] (the last one used, or the light's first). SOLID and FLASH are manual, so auto light is
-     * switched off first. One atomic step on [commandLock].
+     * Goes to a mode of a group: the next of [levels] when the light is already in the group ([inGroup]; on,
+     * manual), else [current] (the last one used, or the light's first). SOLID and FLASH are manual, so auto
+     * light is switched off first. One atomic step on [commandLock].
      */
     private fun selectManual(
-        group: Set<Int>,
+        inGroup: (LightState) -> Boolean,
         levels: (LightState) -> List<Int>,
         current: (LightState) -> Int?,
     ): Boolean = synchronized(commandLock) {
         val s = _state.value
-        val cycling = !s.poweredOff && !s.autoLightOn && s.mode in group
+        val cycling = !s.poweredOff && !s.autoLightOn && inGroup(s)
         val next = if (cycling) LightModes.next(s.mode, levels(s)) else null
         val target = next ?: current(s) ?: return false
         return selectManualMode(target)
