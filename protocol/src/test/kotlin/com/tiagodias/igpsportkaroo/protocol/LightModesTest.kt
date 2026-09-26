@@ -2,6 +2,7 @@ package com.tiagodias.igpsportkaroo.protocol
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LightModesTest {
@@ -44,5 +45,20 @@ class LightModesTest {
         assertEquals(2, LightModes.next(1, listOf(0, 1, 2)))
         assertNull(LightModes.next(1, emptyList()))
         assertNull(LightModes.next(1, listOf(0)))
+    }
+
+    @Test
+    fun `steady and flash levels keep the light's order and skip custom modes`() {
+        val vs1200s = listOf(2, 1, 4, 5, 64) // docs/vs1200s-findings.md: declared and enabled, in the light's order
+        assertEquals(listOf(2, 1), LightModes.steadyLevels(vs1200s))
+        assertEquals(listOf(4, 5), LightModes.flashLevels(vs1200s))
+        assertEquals(emptyList<Int>(), LightModes.flashLevels(listOf(1, 64)))
+    }
+
+    @Test
+    fun `mode groups`() {
+        assertTrue(listOf(1, 2, 3, 7, 8, 9, 10, 11, 12, 16).all { it in LightModes.STEADY })
+        assertTrue(listOf(4, 5, 6, 17).all { it in LightModes.FLASHING })
+        assertTrue(listOf(0, 64, 75).none { it in LightModes.STEADY || it in LightModes.FLASHING })
     }
 }

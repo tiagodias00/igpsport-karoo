@@ -25,19 +25,25 @@ object IgpsProtocol {
     const val TYPE_STATE = 0x03
 
     private const val SERVICE_LIGHT = 106
+    /** The VS1200S's second service (0x6B): only its auto-brightness report is understood. */
+    private const val SERVICE_AUX = 107
     private const val OP_WRITE = 1
     private const val OP_READ = 2
 
     private const val SUB_MODE_SUPPORTED = 1
     private const val SUB_MODE_CURRENT = 2
+    private const val SUB_SMART_CONFIG = 4
     private const val SUB_REMAINING_TIME = 5
     private const val SUB_BATTERY = 6
     private const val SUB_MODE_ENABLE = 7
+    private const val SUB_AUX_BRIGHTNESS = 7
 
     private const val F_SERVICE = 1
     private const val F_OPERATE = 2
     private const val F_SUB = 3
     private const val F_MODE_DECLARED = 6
+    private const val F_SMART_CONFIG_DECLARED = 9
+    private const val F_SMART_CONFIG_SET = 10
     private const val F_MODE_ENABLE = 11
     private const val F_CURRENT_MODE = 13
     private const val F_REMAINING_TIME = 14
@@ -47,6 +53,14 @@ object IgpsProtocol {
     fun readCurrentMode(): ByteArray = message(SUB_MODE_CURRENT, OP_READ)
     fun readRemainingTime(): ByteArray = message(SUB_REMAINING_TIME, OP_READ)
     fun readBattery(): ByteArray = message(SUB_BATTERY, OP_READ)
+    fun readSmartConfigs(): ByteArray = message(SUB_SMART_CONFIG, OP_READ)
+
+    /** Sets smart config [id] ([SmartConfig]) to [status]. Status 0 (off) is the protobuf default, so it is omitted. */
+    fun setSmartConfig(id: Int, status: Int): ByteArray {
+        var inner = ProtoWire.varintField(1, id.toLong())
+        if (status != SmartConfig.OFF) inner += ProtoWire.varintField(2, status.toLong())
+        return message(SUB_SMART_CONFIG, OP_WRITE, ProtoWire.messageField(F_SMART_CONFIG_SET, inner))
+    }
 
     /** Mode 0 (off) is the protobuf default, so its inner message is sent empty. */
     fun setMode(mode: Int): ByteArray {
@@ -97,8 +111,12 @@ object IgpsProtocol {
 
     fun parseFrame(bytes: ByteArray): LightUpdate? {
         if (!headerValid(bytes)) return null
-        // The VS1200S also sends type-03 frames for service 0x6B; only the lighting service (0x6A) is understood.
-        if ((bytes[1].toInt() and 0xFF) != SERVICE_LIGHT) return null
+        val service = bytes[1].toInt() and 0xFF
+        // The VS1200S also sends type-03 frames for service 0x6B: only the auto-brightness one (sub 7) is understood.
+        if (service == SERVICE_AUX && bytes[0].toInt() == TYPE_STATE && (bytes[2].toInt() and 0xFF) == SUB_AUX_BRIGHTNESS) {
+            return LightUpdate(autoBrightnessPercent = bytes[7].toInt() and 0xFF)
+        }
+        if (service != SERVICE_LIGHT) return null
         return when (bytes[0].toInt()) {
             TYPE_STATE -> parseState(bytes)
             TYPE_DATA -> parseData(bytes)
@@ -108,11 +126,17 @@ object IgpsProtocol {
 
     private fun parseState(bytes: ByteArray): LightUpdate? = when (bytes[2].toInt() and 0xFF) {
         SUB_MODE_CURRENT -> LightUpdate(mode = bytes[7].toInt() and 0xFF)
-        SUB_REMAINING_TIME -> LightUpdate(
-            remainingMinutes = (bytes[11].toInt() and 0xFF) or
-                ((bytes[12].toInt() and 0xFF) shl 8) or
-                ((bytes[13].toInt() and 0xFF) shl 16),
-        )
+        // No run time (bytes 11..14 all FF) means auto light has switched the output off.
+        SUB_REMAINING_TIME -> if ((11..14).all { bytes[it] == 0xFF.toByte() }) {
+            LightUpdate(outputOff = true)
+        } else {
+            LightUpdate(
+                remainingMinutes = (bytes[11].toInt() and 0xFF) or
+                    ((bytes[12].toInt() and 0xFF) shl 8) or
+                    ((bytes[13].toInt() and 0xFF) shl 16),
+                outputOff = false,
+            )
+        }
         else -> null
     }
 
@@ -122,14 +146,14 @@ object IgpsProtocol {
         val payload = bytes.copyOfRange(HEADER_LEN, HEADER_LEN + length)
         if (Crc8.maxim(payload) != (bytes[9].toInt() and 0xFF)) return null
         val fields = ProtoWire.parse(payload) ?: return null
-        val declared = if (F_MODE_DECLARED in fields) {
-            fields.messages(F_MODE_DECLARED).mapNotNull { entry ->
-                val e = ProtoWire.parse(entry) ?: return@mapNotNull null
-                val mode = e.varint(1)?.toInt() ?: return@mapNotNull null
-                mode to ((e.varint(3) ?: 0L) != 0L)
-            }.toMap(LinkedHashMap())
-        } else {
-            null
+        val declared = entries(fields, F_MODE_DECLARED) { e ->
+            val mode = e.varint(1)?.toInt() ?: return@entries null
+            mode to ((e.varint(3) ?: 0L) != 0L)
+        }
+        // A missing status is the protobuf default: off.
+        val smartConfigs = entries(fields, F_SMART_CONFIG_DECLARED) { e ->
+            val id = e.varint(1)?.toInt() ?: return@entries null
+            id to (e.varint(2)?.toInt() ?: SmartConfig.OFF)
         }
         return LightUpdate(
             // An empty inner message means the protobuf default: off.
@@ -137,6 +161,17 @@ object IgpsProtocol {
             batteryPercent = fields.message(F_BATTERY)?.let { ProtoWire.parse(it)?.varint(13)?.toInt() },
             remainingMinutes = fields.message(F_REMAINING_TIME)?.let { ProtoWire.parse(it)?.varint(1)?.toInt() },
             declaredModes = declared,
+            smartConfigs = smartConfigs,
         )
+    }
+
+    /** Repeated message [field] as an ordered map built by [entry]; null when the frame has no such field. */
+    private fun <K, V> entries(
+        fields: Map<Int, List<ProtoWire.Value>>,
+        field: Int,
+        entry: (Map<Int, List<ProtoWire.Value>>) -> Pair<K, V>?,
+    ): Map<K, V>? {
+        if (field !in fields) return null
+        return fields.messages(field).mapNotNull { bytes -> ProtoWire.parse(bytes)?.let(entry) }.toMap(LinkedHashMap())
     }
 }

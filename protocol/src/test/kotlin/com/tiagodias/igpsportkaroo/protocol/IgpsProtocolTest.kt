@@ -45,20 +45,67 @@ class IgpsProtocolTest {
     @Test
     fun `parses spontaneous state frames from the light's button`() {
         assertEquals(LightUpdate(mode = 2), IgpsProtocol.parseFrame(Hex.decode("03 6A 02 FF 02 FF FF 02 FF FF 01 FF FF FF FF FF FF FF FF 4D")))
-        assertEquals(LightUpdate(remainingMinutes = 300), IgpsProtocol.parseFrame(Hex.decode("03 6A 05 FF 02 FF FF 00 FF FF 01 2C 01 00 00 FF FF FF FF BE")))
+        assertEquals(LightUpdate(remainingMinutes = 300, outputOff = false), IgpsProtocol.parseFrame(Hex.decode("03 6A 05 FF 02 FF FF 00 FF FF 01 2C 01 00 00 FF FF FF FF BE")))
     }
 
     @Test
     fun `parses frames captured from the real VS1200S`() {
         // docs/vs1200s-findings.md: button-press state frames and the declared-modes reply (3 notifications joined)
         assertEquals(LightUpdate(mode = 2), IgpsProtocol.parseFrame(Hex.decode("03 6A 02 FF 01 FF FF 02 FF FF FF FF FF FF FF FF FF FF FF DA")))
-        assertEquals(LightUpdate(remainingMinutes = 240), IgpsProtocol.parseFrame(Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF F0 00 00 00 FF FF FF FF 38")))
+        assertEquals(LightUpdate(remainingMinutes = 240, outputOff = false), IgpsProtocol.parseFrame(Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF F0 00 00 00 FF FF FF FF 38")))
         val declared = Hex.decode(
             "01 6A 01 FF 02 FF FF 00 26 0E 01 FF FF FF FF FF FF FF FF 30 " +
                 "08 6A 10 02 18 01 32 04 08 02 18 01 32 04 08 01 18 01 32 04 " +
                 "08 04 18 01 32 04 08 05 18 01 32 06 08 40 10 01 18 01",
         )
         assertEquals(linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true, 64 to true), IgpsProtocol.parseFrame(declared)!!.declaredModes)
+    }
+
+    @Test
+    fun `builds smart-config requests identical to the real light capture`() {
+        assertEquals("01 6A 04 FF 02 FF FF 00 06 81 01 FF FF FF FF FF FF FF FF 5C 08 6A 10 02 18 04", hex(IgpsProtocol.readSmartConfigs()))
+        assertEquals(
+            "01 6A 04 FF 01 FF FF 00 0A 15 01 FF FF FF FF FF FF FF FF 49 08 6A 10 01 18 04 52 02 08 03",
+            hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_LIGHT, SmartConfig.OFF)),
+        )
+        assertEquals(
+            "01 6A 04 FF 01 FF FF 00 0C 3D 01 FF FF FF FF FF FF FF FF 3B 08 6A 10 01 18 04 52 04 08 03 10 01",
+            hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_LIGHT, SmartConfig.ON)),
+        )
+    }
+
+    @Test
+    fun `parses the smart-config reply in the light's order`() {
+        // docs/vs1200s-findings.md: the VS1200S's reply, joined; status omitted = off, field 3 = timeout seconds.
+        val reply = Hex.decode(
+            "01 6A 04 FF 02 FF FF 00 30 6C 01 FF FF FF FF FF FF FF FF BE 08 6A 10 02 18 04 4A 02 08 05 " +
+                "4A 04 08 03 10 01 4A 04 08 09 10 01 4A 08 08 04 10 01 1A 02 08 3C 4A 08 08 0D 10 01 1A 02 08 1E " +
+                "4A 04 08 0F 10 01",
+        )
+        val configs = IgpsProtocol.parseFrame(reply)!!.smartConfigs!!
+        assertEquals(mapOf(5 to 0, 3 to 1, 9 to 1, 4 to 1, 13 to 1, 15 to 1), configs)
+        assertEquals(listOf(5, 3, 9, 4, 13, 15), configs.keys.toList())
+    }
+
+    @Test
+    fun `reads the auto brightness from the light's 0x6B sub-7 frames`() {
+        assertEquals(
+            LightUpdate(autoBrightnessPercent = 97),
+            IgpsProtocol.parseFrame(Hex.decode("03 6B 07 FF 01 FF FF 61 FF FF FF FF FF FF FF FF FF FF FF 55")),
+        )
+        assertEquals(
+            LightUpdate(autoBrightnessPercent = 94),
+            IgpsProtocol.parseFrame(Hex.decode("03 6B 07 FF 01 FF FF 5E FF FF FF FF FF FF FF FF FF FF FF 5C")),
+        )
+    }
+
+    @Test
+    fun `a run-time state frame without a run time means the output is off`() {
+        // Captured while auto light had switched the VS1200S off in daylight; not 16 777 215 minutes.
+        assertEquals(
+            LightUpdate(outputOff = true),
+            IgpsProtocol.parseFrame(Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF FF FF FF FF FF FF FF FF 5B")),
+        )
     }
 
     @Test
