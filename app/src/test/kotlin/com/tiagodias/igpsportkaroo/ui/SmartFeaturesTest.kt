@@ -7,7 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SmartFeaturesTest {
-    /** The VS1200S, in the order the light declares them (docs/vs1200s-findings.md). */
+    /** The VS1200S, in the order the light declares them (captured from the light). */
     private val vs1200s = linkedMapOf(5 to 0, 3 to 1, 9 to 1, 4 to 1, 13 to 1, 15 to 1)
 
     @Test

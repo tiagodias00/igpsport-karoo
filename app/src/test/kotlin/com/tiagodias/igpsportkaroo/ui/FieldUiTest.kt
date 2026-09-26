@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FieldUiTest {
-    /** The VS1200S: MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1 = LOW (docs/vs1200s-findings.md). */
+    /** The VS1200S: MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1 = LOW, as it declares them. */
     private val vs1200sModes = linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true, 64 to true)
     private val vs1200sConfigs = linkedMapOf(5 to 0, 3 to 0, 9 to 1, 4 to 1, 13 to 1, 15 to 1) // AUTO_LIGHT off
     private val high = LightState(
@@ -108,17 +108,17 @@ class FieldUiTest {
 
     @Test
     fun `auto detail shows only the running mode`() {
-        // The light doesn't reliably report brightness % or daylight auto-off (docs/vs1200s-findings.md), so
+        // The light doesn't reliably report daylight auto-off, and the 0x6B reading is a battery value, so
         // neither is shown here regardless of what the light last reported for them.
-        val running = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).button(Kind.AUTO)
+        val running = FieldUi.from(autoOn.copy(auxBatteryPercent = 95)).button(Kind.AUTO)
         assertEquals("HIGH", running.detail)
         assertEquals("HI", running.shortDetail)
 
-        val outputOff = FieldUi.from(autoOn.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
+        val outputOff = FieldUi.from(autoOn.copy(outputOff = true, auxBatteryPercent = 95)).button(Kind.AUTO)
         assertEquals("HIGH", outputOff.detail)
         assertEquals("HI", outputOff.shortDetail)
 
-        val unknownMode = FieldUi.from(autoOn.copy(mode = null, autoBrightnessPercent = 95)).button(Kind.AUTO)
+        val unknownMode = FieldUi.from(autoOn.copy(mode = null, auxBatteryPercent = 95)).button(Kind.AUTO)
         assertEquals("", unknownMode.detail)
         assertEquals("", unknownMode.shortDetail)
     }
@@ -148,7 +148,7 @@ class FieldUiTest {
 
     @Test
     fun `auto detail is blank while auto is off`() {
-        val stale = FieldUi.from(high.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
+        val stale = FieldUi.from(high.copy(outputOff = true, auxBatteryPercent = 95)).button(Kind.AUTO)
         assertEquals("", stale.detail)
         assertEquals("", stale.shortDetail)
         assertEquals("AUTO", stale.compactText(maxChars = 8))
@@ -156,7 +156,7 @@ class FieldUiTest {
 
     @Test
     fun `footer never mentions daylight auto-off`() {
-        // The light doesn't reliably report this (docs/vs1200s-findings.md): the normal battery/run-time
+        // The light doesn't reliably report this (seen on a VS1200S): the normal battery/run-time
         // footer is shown regardless of outputOff.
         assertEquals("78%  ·  3h 20m left", FieldUi.from(autoOn.copy(outputOff = true)).footer)
         assertEquals("3h 20m left", FieldUi.from(autoOn.copy(outputOff = true, batteryPercent = null)).footer)
@@ -170,7 +170,7 @@ class FieldUiTest {
 
     @Test
     fun `compact labels include the detail when it fits`() {
-        val ui = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95).apply(LightUpdate(mode = 5)))
+        val ui = FieldUi.from(autoOn.copy(auxBatteryPercent = 95).apply(LightUpdate(mode = 5)))
         assertEquals(listOf("SOL", "FLS", "AUTO", "OFF"), ui.buttons.map { it.shortLabel })
         assertEquals(listOf("HI", "LO", "FL LO", ""), ui.buttons.map { it.shortDetail })
         assertEquals(listOf("SOL HI", "FLS LO", "AUTO", "OFF"), ui.buttons.map { it.compactText(maxChars = 8) })
@@ -181,8 +181,8 @@ class FieldUiTest {
     @Test
     fun `headline shows the active button`() {
         assertEquals("SOLID · HIGH", FieldUi.from(high).headline)
-        // Brightness % never appears, even when the light last reported one (docs/vs1200s-findings.md).
-        assertEquals("AUTO · HIGH", FieldUi.from(autoOn.copy(autoBrightnessPercent = 95)).headline)
+        // The 0x6B battery reading never appears in the headline.
+        assertEquals("AUTO · HIGH", FieldUi.from(autoOn.copy(auxBatteryPercent = 95)).headline)
         assertEquals("OFF", FieldUi.from(high.copy(poweredOff = true)).headline)
     }
 

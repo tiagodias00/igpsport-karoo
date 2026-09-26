@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Release builds are tagged vX.Y.Z in CI (Task 16); everything else is a dev build whose huge
+// Release builds are tagged vX.Y.Z in CI (.github/workflows/build.yml); everything else is a dev build whose huge
 // versionCode stops the Karoo updater from replacing it with a published release.
 val releaseTag: String? = System.getenv("GITHUB_REF_NAME")
     ?.takeIf { System.getenv("GITHUB_REF_TYPE") == "tag" }
@@ -19,7 +19,7 @@ fun semverToVersionCode(v: String): Int {
 
 val githubRepo: String = providers.gradleProperty("githubRepo").getOrElse("OWNER/igpsport-karoo")
 
-// Release builds are signed only when a keystore is supplied via env vars (CI, Task 16).
+// Release builds are signed only when a keystore is supplied via env vars (CI).
 val releaseKeystore: String? = System.getenv("KEYSTORE_FILE")
 
 android {

@@ -50,7 +50,7 @@ class LightModesTest {
 
     @Test
     fun `steady levels are brightest first and include the low custom level`() {
-        val vs1200s = listOf(2, 1, 4, 5, 64) // docs/vs1200s-findings.md: declared and enabled, in the light's order
+        val vs1200s = listOf(2, 1, 4, 5, 64) // captured from a VS1200S: declared and enabled, in the light's order
         assertEquals(listOf(1, 2, 64), LightModes.steadyLevels(vs1200s)) // HIGH, MID, LOW
         assertEquals(listOf(16, 1, 7, 10, 2, 8, 11, 3, 9, 12, 64, 65, 75), LightModes.steadyLevels(listOf(75, 65, 64, 12, 11, 10, 9, 8, 7, 3, 2, 1, 16)))
     }

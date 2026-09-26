@@ -35,7 +35,10 @@ class Settings(context: Context) {
     fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts, offAtRideEnd)
 
     companion object {
-        /** The VS1200S's declared modes (HIGH, MID, FLASH HI, FLASH LO, CUSTOM 1) plus OFF. */
-        val CHOOSABLE_MODES = listOf(1, 2, 4, 5, 64, 0)
+        /**
+         * The modes offered as a ride-start choice: the VS1200S's declared modes (HIGH, MID, FLASH HI,
+         * FLASH LO, CUSTOM 1 = LOW). OFF is not a ride-start choice.
+         */
+        val CHOOSABLE_MODES = listOf(1, 2, 4, 5, 64)
     }
 }

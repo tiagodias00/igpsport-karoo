@@ -1,7 +1,7 @@
 package com.tiagodias.igpsportkaroo.protocol
 
 /**
- * Detects auto light dimming from run-time jumps (docs/vs1200s-findings.md): in AUTO the light never reports
+ * Detects auto light dimming from run-time jumps (observed on a VS1200S): in AUTO the light never reports
  * its brightness, but its spontaneous run-time reports alternate between roughly two levels as it dims itself
  * (e.g. on HIGH at ~87% battery, ~150-155 min full vs ~230-240 min dimmed). Tracks the shortest remaining time
  * seen for the current mode while auto is on as the "full" reference, and calls the light dimmed once a report

@@ -44,7 +44,7 @@
                 android:resource="@xml/extension_info" />
         </service>
 
-        <!-- Karoo checks this for updates (Task 16 publishes it) -->
+        <!-- Karoo checks this for updates (the release workflow publishes it) -->
         <meta-data
             android:name="io.hammerhead.karooext.MANIFEST_URL"
             android:value="${manifestUrl}" />

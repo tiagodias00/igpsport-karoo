@@ -5,7 +5,8 @@ package com.tiagodias.igpsportkaroo.protocol
  *
  * Every frame is a 20-byte transport header followed by a protobuf payload. Reverse-engineered by
  * cparfait/Bike-Light-Control (MIT) from the iGPSPORT Ride app and an HCI capture of a VS1800S;
- * VS1200S behaviour is recorded in docs/vs1200s-findings.md.
+ * the VS1200S specifics (its CUSTOM 1 low level, the 0x6B service, run-time state frames) come from
+ * captures of a real VS1200S.
  */
 object IgpsProtocol {
     const val UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -13,7 +14,10 @@ object IgpsProtocol {
     const val UART_WRITE = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
     /** Light to central (notify). */
     const val UART_NOTIFY = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
-    /** The only UUID the light advertises: it does not advertise the UART service. */
+    /**
+     * Advertised by the whole family. The VS1200S also advertises [UART_SERVICE], the VS1800S doesn't, so
+     * scans match on this marker (or the model name) rather than on the UART service.
+     */
     const val ADVERT_MARKER = "a238c112-8136-52a9-364b-d61ac015024e"
     const val CCCD = "00002902-0000-1000-8000-00805f9b34fb"
 
@@ -25,7 +29,7 @@ object IgpsProtocol {
     const val TYPE_STATE = 0x03
 
     private const val SERVICE_LIGHT = 106
-    /** The VS1200S's second service (0x6B): only its auto-brightness report is understood. */
+    /** The VS1200S's second service (0x6B): only its sub-7 battery report is understood. */
     private const val SERVICE_AUX = 107
     private const val OP_WRITE = 1
     private const val OP_READ = 2
@@ -36,7 +40,7 @@ object IgpsProtocol {
     private const val SUB_REMAINING_TIME = 5
     private const val SUB_BATTERY = 6
     private const val SUB_MODE_ENABLE = 7
-    private const val SUB_AUX_BRIGHTNESS = 7
+    private const val SUB_AUX_BATTERY = 7
 
     private const val F_SERVICE = 1
     private const val F_OPERATE = 2
@@ -112,9 +116,9 @@ object IgpsProtocol {
     fun parseFrame(bytes: ByteArray): LightUpdate? {
         if (!headerValid(bytes)) return null
         val service = bytes[1].toInt() and 0xFF
-        // The VS1200S also sends type-03 frames for service 0x6B: only the auto-brightness one (sub 7) is understood.
-        if (service == SERVICE_AUX && bytes[0].toInt() == TYPE_STATE && (bytes[2].toInt() and 0xFF) == SUB_AUX_BRIGHTNESS) {
-            return LightUpdate(autoBrightnessPercent = bytes[7].toInt() and 0xFF)
+        // The VS1200S also sends type-03 frames for service 0x6B: only the sub-7 one, a battery reading, is understood.
+        if (service == SERVICE_AUX && bytes[0].toInt() == TYPE_STATE && (bytes[2].toInt() and 0xFF) == SUB_AUX_BATTERY) {
+            return LightUpdate(auxBatteryPercent = bytes[7].toInt() and 0xFF)
         }
         if (service != SERVICE_LIGHT) return null
         return when (bytes[0].toInt()) {

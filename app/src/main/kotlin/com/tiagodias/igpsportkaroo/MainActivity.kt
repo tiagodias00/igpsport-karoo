@@ -208,7 +208,7 @@ class MainActivity : Activity() {
         headline.text = ui.headline
         // While searching the headline says so; the field's "tap to retry" footer is the Retry button here.
         footer.text = if (ui.connected) ui.footer else ""
-        // The light can't reliably report its own auto brightness/off state (docs/vs1200s-findings.md), so this
+        // The light doesn't report when auto light dims or switches off its output (seen on a VS1200S), so this
         // is the only place that warns about it, instead of showing unreliable numbers on the buttons.
         val showAutoNote = ui.connected && state.autoLightOn
         autoNote.text = if (showAutoNote) getString(R.string.auto_light_note) else ""

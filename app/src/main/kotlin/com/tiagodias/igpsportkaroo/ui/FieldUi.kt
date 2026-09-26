@@ -97,10 +97,9 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
 
         /**
          * AUTO shows the mode auto light is running ("HIGH", "HI" compact) — nothing else but, when the light
-         * looks like it dimmed itself, a "DIMMED" / "DIM" suffix ([LightState.autoDimmed], from the run-time
-         * jumps: docs/vs1200s-findings.md). On-device testing found the light never reliably reports when it
-         * switches itself off in daylight, nor does its brightness % track that; showing either was misleading,
-         * so neither is shown here. Blank while auto is off: its reports would be stale.
+         * looks like it dimmed itself, a "DIMMED" / "DIM" suffix ([LightState.autoDimmed], inferred from run-time
+         * jumps). On-device testing found the light never reliably reports when it switches itself off in
+         * daylight, so that isn't shown here. Blank while auto is off: its reports would be stale.
          */
         private fun auto(state: LightState): Button {
             val on = state.autoLightOn

@@ -12,3 +12,12 @@ __pycache__/
 .pytest_cache/
 docs/
 .superpowers/
+*.p12
+*.pfx
+*.pem
+keystore.properties
+*.b64
+*.base64
+*.apk
+*.aab
+.env

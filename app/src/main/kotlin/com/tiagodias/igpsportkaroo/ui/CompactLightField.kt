@@ -30,7 +30,7 @@ private const val STATUS_WIDTH = 0.18f
 
 /**
  * ┌────────┬────────┬──────────┬─────┬──────┐
- * │ SOL HI │ FLS LO │ AUTO 95% │ OFF │ 100% │   tap = as on the regular field; tap ↻ (while searching) = reconnect now
+ * │ SOL HI │ FLS LO │ AUTO HI  │ OFF │ 100% │   tap = as on the regular field; tap ↻ (while searching) = reconnect now
  * └────────┴────────┴──────────┴─────┴──────┘
  * Text scales with the slot height so the row fits a normal 1-row slot; a button drops its detail
  * ("SOL HI" becomes "SOL") when it would not fit, e.g. at half width.

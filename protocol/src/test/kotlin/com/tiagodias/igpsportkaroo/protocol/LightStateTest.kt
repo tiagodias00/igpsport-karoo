@@ -34,14 +34,14 @@ class LightStateTest {
     }
 
     @Test
-    fun `apply merges smart configs, auto brightness and output off`() {
+    fun `apply merges smart configs, aux battery and output off`() {
         val s = LightState(connected = true, mode = 1)
             .apply(LightUpdate(smartConfigs = linkedMapOf(5 to 0, 3 to 1)))
-            .apply(LightUpdate(autoBrightnessPercent = 95))
+            .apply(LightUpdate(auxBatteryPercent = 95))
             .apply(LightUpdate(outputOff = true))
             .apply(LightUpdate(batteryPercent = 80))
         assertEquals(mapOf(5 to 0, 3 to 1), s.smartConfigs)
-        assertEquals(95, s.autoBrightnessPercent)
+        assertEquals(95, s.auxBatteryPercent)
         assertTrue(s.outputOff)
         assertFalse(s.apply(LightUpdate(remainingMinutes = 165, outputOff = false)).outputOff)
     }

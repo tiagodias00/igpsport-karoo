@@ -34,7 +34,6 @@
     <string name="none">Don\'t change</string>
     <string name="off_at_ride_end">Turn off the light when the ride ends</string>
     <string name="low_battery_alerts" formatted="false">Low battery alerts (20% and 10%)</string>
-    <string name="open_controls">Open light controls</string>
     <string name="control_title">Light controls</string>
     <string name="low_battery_title">Light battery %1$d%%</string>
     <string name="low_battery_detail">Your iGPSPORT light is running low.</string>

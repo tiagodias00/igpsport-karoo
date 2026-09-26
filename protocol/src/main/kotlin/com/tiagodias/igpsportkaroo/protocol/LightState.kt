@@ -11,14 +11,15 @@ data class LightState(
     val poweredOff: Boolean = false,
     /** [SmartConfig] id to status, in the light's order. */
     val smartConfigs: Map<Int, Int> = emptyMap(),
-    val autoBrightnessPercent: Int? = null,
+    /** The 0x6B battery reading ([LightUpdate.auxBatteryPercent]); not shown. */
+    val auxBatteryPercent: Int? = null,
     /** Auto light has switched the output off (daylight); the light still reports its mode as before. */
     val outputOff: Boolean = false,
     /** The last [LightModes.STEADY] / [LightModes.FLASHING] mode reported, so SOLID / FLASH go back to it. */
     val lastSteadyMode: Int? = null,
     val lastFlashMode: Int? = null,
     /**
-     * True while auto light looks like it dimmed itself (docs/vs1200s-findings.md), from [AutoDimTracker].
+     * True while auto light looks like it dimmed itself (inferred from run-time jumps by [AutoDimTracker]).
      * Like [poweredOff], `apply()` must leave this untouched: it is owned and recomputed by the session.
      */
     val autoDimmed: Boolean = false,
@@ -55,7 +56,7 @@ data class LightState(
             remainingMinutes = update.remainingMinutes ?: remainingMinutes,
             declaredModes = update.declaredModes ?: declaredModes,
             smartConfigs = update.smartConfigs ?: smartConfigs,
-            autoBrightnessPercent = update.autoBrightnessPercent ?: autoBrightnessPercent,
+            auxBatteryPercent = update.auxBatteryPercent ?: auxBatteryPercent,
             outputOff = update.outputOff ?: outputOff,
             lastSteadyMode = newMode?.takeIf { it in LightModes.STEADY } ?: lastSteadyMode,
             lastFlashMode = newMode?.takeIf { it in LightModes.FLASHING } ?: lastFlashMode,

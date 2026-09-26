@@ -143,7 +143,7 @@ class GattLightLink(private val context: Context) : LightLink {
                 val notify = service?.getCharacteristic(UART_NOTIFY)
                 val cccd = notify?.getDescriptor(CCCD)
                 if (write == null || notify == null || cccd == null) {
-                    Timber.w("UART service missing on %s (see docs/vs1200s-findings.md)", address)
+                    Timber.w("UART service missing on %s: not an iGPSPORT VS-series light, or its services are not ready yet", address)
                     g.disconnect()
                     return
                 }

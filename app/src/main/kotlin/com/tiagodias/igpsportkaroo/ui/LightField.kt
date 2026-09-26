@@ -42,7 +42,7 @@ data class FieldStyle(
 /**
  * ┌───────┬───────┬───────┬───────┐
  * │ SOLID │ FLASH │ AUTO  │  OFF  │   tap SOLID / FLASH again = next level; active = green
- * │ HIGH  │ FL LO │  95%  │       │
+ * │ HIGH  │ FL LO │ HIGH  │       │
  * ├───────┴───────┴───────┴───────┤
  * │     78%  ·  3h 20m left       │   tap while searching = reconnect now
  * └───────────────────────────────┘

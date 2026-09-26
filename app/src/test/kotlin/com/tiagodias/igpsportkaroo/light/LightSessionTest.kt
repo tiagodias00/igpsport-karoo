@@ -69,7 +69,7 @@ class LightSessionTest {
     // Captured from the real VS1200S: button press to MID.
     private val vs1200sButtonMid = Hex.decode("03 6A 02 FF 01 FF FF 02 FF FF FF FF FF FF FF FF FF FF FF DA")
 
-    // Captured from the real VS1200S (docs/vs1200s-findings.md): declares MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1, all enabled.
+    // Captured from the real VS1200S: declares MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1, all enabled.
     private val vs1200sDeclared = Hex.decode(
         "01 6A 01 FF 02 FF FF 00 26 0E 01 FF FF FF FF FF FF FF FF 30 " +
             "08 6A 10 02 18 01 32 04 08 02 18 01 32 04 08 01 18 01 32 04 " +
@@ -84,8 +84,8 @@ class LightSessionTest {
     // Captured from the real VS1200S: auto light switched the output off in daylight, then 240 min run time.
     private val vs1200sOutputOff = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF FF FF FF FF FF FF FF FF 5B")
     private val vs1200sRunTime240 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF F0 00 00 00 FF FF FF FF 38")
-    private val vs1200sAutoBrightness97 = Hex.decode("03 6B 07 FF 01 FF FF 61 FF FF FF FF FF FF FF FF FF FF FF 55")
-    // Captured from the real VS1200S in AUTO on HIGH (docs/vs1200s-findings.md): run time alternating between
+    private val vs1200sAuxBattery97 = Hex.decode("03 6B 07 FF 01 FF FF 61 FF FF FF FF FF FF FF FF FF FF FF 55")
+    // Captured from the real VS1200S in AUTO on HIGH: run time alternating between
     // full (155 min) and dimmed (235 min) as auto light dims the output.
     private val vs1200sRunTime155 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF 9B 00 00 00 FF FF FF FF 36")
     private val vs1200sRunTime235 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF EB 00 00 00 FF FF FF FF 83")
@@ -455,13 +455,13 @@ class LightSessionTest {
     }
 
     @Test
-    fun `smart configs and auto brightness are parsed into state`() = runTest {
+    fun `smart configs and the aux battery reading are parsed into state`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)
-        report(link, vs1200sSmartConfigs, vs1200sAutoBrightness97)
+        report(link, vs1200sSmartConfigs, vs1200sAuxBattery97)
         assertEquals(mapOf(5 to 0, 3 to 1, 9 to 1, 4 to 1, 13 to 1, 15 to 1), session.state.value.smartConfigs)
         assertTrue(session.state.value.autoLightOn)
-        assertEquals(97, session.state.value.autoBrightnessPercent)
+        assertEquals(97, session.state.value.auxBatteryPercent)
     }
 
     @Test

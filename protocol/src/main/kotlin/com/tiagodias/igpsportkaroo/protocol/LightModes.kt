@@ -3,7 +3,7 @@ package com.tiagodias.igpsportkaroo.protocol
 object LightModes {
     const val OFF = 0
 
-    /** CUSTOM 1: on the VS1200S it is the low steady level (~700 min run time; docs/vs1200s-findings.md). */
+    /** CUSTOM 1: on the VS1200S it is the low steady level (~700 min run time, measured on the light). */
     const val CUSTOM_LOW = 64
 
     private val CUSTOM = 64..75

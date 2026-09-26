@@ -1,6 +1,6 @@
 package com.tiagodias.igpsportkaroo.protocol
 
-/** The light's "smart" switches (sub 4): ids and their status values (docs/vs1200s-findings.md → "Smart features"). */
+/** The light's "smart" switches (sub 4): ids and their status values (as the VS1200S reports and accepts them). */
 object SmartConfig {
     const val AUTO_LIGHT = 3
     const val AUTO_SLEEP = 4
