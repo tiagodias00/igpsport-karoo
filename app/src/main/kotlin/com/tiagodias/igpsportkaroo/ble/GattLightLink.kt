@@ -9,12 +9,14 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -32,7 +34,8 @@ import java.util.concurrent.atomic.AtomicReference
  * - Scan-then-connect: a blind connectGatt on a busy Karoo radio often hangs; connecting right
  *   after an advertisement lands in the light's listen window (pattern from KarooB54).
  * - One GATT operation in flight: chunks are written one at a time, each after the previous ack.
- * - Reconnects with 1/2/4/8 s backoff until the flow is cancelled.
+ * - Reconnects with 1/2/4/8 s backoff until the flow is cancelled; watchdogs restart a scan or a
+ *   GATT setup that stalls without a callback.
  */
 @SuppressLint("MissingPermission")
 class GattLightLink(private val context: Context) : LightLink {
@@ -46,6 +49,7 @@ class GattLightLink(private val context: Context) : LightLink {
     private var writeChar: BluetoothGattCharacteristic? = null
     private val pending = ArrayDeque<ByteArray>()
     private var writeInFlight = false
+    private var setupWatchdog: Job? = null
 
     override fun send(frame: ByteArray): Boolean {
         synchronized(lock) {
@@ -76,6 +80,8 @@ class GattLightLink(private val context: Context) : LightLink {
         writeChar = null
         pending.clear()
         writeInFlight = false
+        setupWatchdog?.cancel()
+        setupWatchdog = null
     }
 
     override fun connect(address: String): Flow<LinkEvent> = callbackFlow {
@@ -86,6 +92,7 @@ class GattLightLink(private val context: Context) : LightLink {
             return@callbackFlow
         }
         val device = bt.getRemoteDevice(address)
+        // Flipped to false only under [lock], so a scan result can't open a GATT after teardown.
         val active = AtomicBoolean(true)
         val attempt = AtomicInteger(0)
         val scanCallbackRef = AtomicReference<ScanCallback?>(null)
@@ -107,14 +114,20 @@ class GattLightLink(private val context: Context) : LightLink {
                     BluetoothProfile.STATE_CONNECTED -> {
                         Timber.i("GATT connected (status=%d); discovering services", status)
                         g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-                        g.discoverServices()
+                        if (!g.discoverServices()) {
+                            Timber.w("discoverServices rejected; dropping the connection")
+                            g.disconnect()
+                        }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         Timber.i("GATT disconnected (status=%d)", status)
-                        synchronized(lock) { if (gatt === g) clearLocked() }
+                        // A gatt the setup watchdog already dropped has scheduled its own retry.
+                        val current = synchronized(lock) { (gatt === g).also { if (it) clearLocked() } }
                         g.close()
-                        trySend(LinkEvent.Disconnected)
-                        scheduleRetry()
+                        if (current) {
+                            trySend(LinkEvent.Disconnected)
+                            scheduleRetry()
+                        }
                     }
                 }
             }
@@ -133,7 +146,10 @@ class GattLightLink(private val context: Context) : LightLink {
                 g.setCharacteristicNotification(notify, true)
                 cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 pendingWriteChar.set(write)
-                g.writeDescriptor(cccd)
+                if (!g.writeDescriptor(cccd)) {
+                    Timber.w("CCCD write rejected; dropping the connection")
+                    g.disconnect()
+                }
             }
 
             override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
@@ -143,7 +159,12 @@ class GattLightLink(private val context: Context) : LightLink {
                     g.disconnect()
                     return
                 }
-                synchronized(lock) { writeChar = pendingWriteChar.getAndSet(null) }
+                synchronized(lock) {
+                    if (gatt !== g) return // torn down or timed out meanwhile
+                    writeChar = pendingWriteChar.getAndSet(null)
+                    setupWatchdog?.cancel()
+                    setupWatchdog = null
+                }
                 attempt.set(0)
                 trySend(LinkEvent.Connected)
             }
@@ -167,44 +188,90 @@ class GattLightLink(private val context: Context) : LightLink {
             }
         }
 
-        startConnect = {
+        /** Setup watchdog: drops [g] and retries if the CCCD ack (Connected) hasn't arrived in time. */
+        fun armSetupWatchdogLocked(g: BluetoothGatt) {
+            setupWatchdog = launch {
+                delay(SETUP_TIMEOUT_MS)
+                synchronized(lock) {
+                    if (gatt !== g || writeChar != null) return@launch
+                    setupWatchdog = null // this job; don't let clearLocked cancel it
+                    clearLocked()
+                }
+                Timber.w("GATT setup stalled for %d ms; reconnecting", SETUP_TIMEOUT_MS)
+                runCatching { g.disconnect(); g.close() }
+                scheduleRetry()
+            }
+        }
+
+        /** Scan watchdog: a throttled or silently killed scan never reports, so replace it with a fresh one. */
+        fun armScanWatchdog(scanner: BluetoothLeScanner, scanCallback: ScanCallback) {
+            launch {
+                delay(SCAN_RESTART_MS)
+                if (active.get() && scanCallbackRef.compareAndSet(scanCallback, null)) {
+                    Timber.i("No advert from %s in %d ms; restarting scan", address, SCAN_RESTART_MS)
+                    runCatching { scanner.stopScan(scanCallback) }
+                    startConnect()
+                }
+            }
+        }
+
+        startConnect = start@{
             val scanner = bt.bluetoothLeScanner
             if (scanner == null) {
                 Timber.w("No BLE scanner (Bluetooth off?); retrying")
                 scheduleRetry()
-            } else {
-                val scanCallback = object : ScanCallback() {
-                    override fun onScanResult(callbackType: Int, result: ScanResult) {
-                        if (!scanCallbackRef.compareAndSet(this, null)) return
-                        runCatching { scanner.stopScan(this) }
+                return@start
+            }
+            val scanCallback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult) {
+                    if (!scanCallbackRef.compareAndSet(this, null)) return
+                    runCatching { scanner.stopScan(this) }
+                    // Held across connectGatt + assignment: teardown either sees this gatt or stops us opening it,
+                    // and an immediate disconnect callback can't run before `gatt` is set.
+                    synchronized(lock) {
+                        if (!active.get()) return
                         Timber.i("Found %s (rssi=%d); connecting", address, result.rssi)
                         val g = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-                        synchronized(lock) { gatt = g }
-                    }
-
-                    override fun onScanFailed(errorCode: Int) {
-                        Timber.w("Connect scan failed: %d", errorCode)
-                        scanCallbackRef.compareAndSet(this, null)
-                        scheduleRetry()
+                        if (g == null) {
+                            Timber.w("connectGatt returned null (Bluetooth off?); retrying")
+                            scheduleRetry()
+                            return
+                        }
+                        gatt = g
+                        armSetupWatchdogLocked(g)
                     }
                 }
-                scanCallbackRef.getAndSet(scanCallback)?.let { old -> runCatching { scanner.stopScan(old) } }
+
+                override fun onScanFailed(errorCode: Int) {
+                    Timber.w("Connect scan failed: %d", errorCode)
+                    scanCallbackRef.compareAndSet(this, null)
+                    scheduleRetry()
+                }
+            }
+            scanCallbackRef.getAndSet(scanCallback)?.let { old -> runCatching { scanner.stopScan(old) } }
+            try {
                 scanner.startScan(
                     listOf(ScanFilter.Builder().setDeviceAddress(address).build()),
                     ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(),
                     scanCallback,
                 )
+            } catch (e: IllegalStateException) {
+                Timber.w(e, "Connect scan could not start (Bluetooth turned off?); retrying")
+                scanCallbackRef.compareAndSet(scanCallback, null)
+                scheduleRetry()
+                return@start
             }
+            armScanWatchdog(scanner, scanCallback)
         }
         startConnect()
 
         awaitClose {
-            active.set(false)
-            scanCallbackRef.getAndSet(null)?.let { cb -> runCatching { bt.bluetoothLeScanner?.stopScan(cb) } }
             synchronized(lock) {
+                active.set(false)
                 gatt?.let { g -> runCatching { g.disconnect(); g.close() } }
                 clearLocked()
             }
+            scanCallbackRef.getAndSet(null)?.let { cb -> runCatching { bt.bluetoothLeScanner?.stopScan(cb) } }
         }
     }
 
@@ -213,5 +280,11 @@ class GattLightLink(private val context: Context) : LightLink {
         val UART_WRITE: UUID = UUID.fromString(IgpsProtocol.UART_WRITE)
         val UART_NOTIFY: UUID = UUID.fromString(IgpsProtocol.UART_NOTIFY)
         val CCCD: UUID = UUID.fromString(IgpsProtocol.CCCD)
+
+        /** From connectGatt to the CCCD ack; a healthy setup takes 1-3 s. */
+        const val SETUP_TIMEOUT_MS = 15_000L
+
+        /** Restart an unanswered connect scan this often: one startScan per 30 s stays under Android's 5-per-30 s throttle. */
+        const val SCAN_RESTART_MS = 30_000L
     }
 }
