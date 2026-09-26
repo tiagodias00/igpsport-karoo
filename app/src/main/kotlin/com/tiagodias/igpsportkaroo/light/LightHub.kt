@@ -1,0 +1,7 @@
+package com.tiagodias.igpsportkaroo.light
+
+/** The active light session, shared by the extension, the ride field, bonus actions and ControlActivity (same process). */
+object LightHub {
+    @Volatile
+    var session: LightSession? = null
+}
