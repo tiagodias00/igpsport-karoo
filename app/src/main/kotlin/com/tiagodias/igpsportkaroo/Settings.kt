@@ -2,13 +2,14 @@ package com.tiagodias.igpsportkaroo
 
 import android.content.Context
 import com.tiagodias.igpsportkaroo.automation.AutomationSettings
+import com.tiagodias.igpsportkaroo.automation.RideStart
 
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("igps_settings", Context.MODE_PRIVATE)
 
-    var rideStartMode: Int?
-        get() = prefs.getInt("ride_start_mode", -1).takeIf { it > 0 }
-        set(value) { prefs.edit().putInt("ride_start_mode", value ?: -1).apply() }
+    var rideStart: RideStart
+        get() = RideStart.decode(prefs.getString("ride_start", null))
+        set(value) { prefs.edit().putString("ride_start", value.encode()).apply() }
 
     var lowBatteryAlerts: Boolean
         get() = prefs.getBoolean("low_battery_alerts", true)
@@ -18,7 +19,7 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("cc_shortcut", true)
         set(value) { prefs.edit().putBoolean("cc_shortcut", value).apply() }
 
-    fun automation(): AutomationSettings = AutomationSettings(rideStartMode, lowBatteryAlerts)
+    fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts)
 
     companion object {
         /** The VS1200S's declared modes (HIGH, MID, FLASH HI, FLASH LO, CUSTOM 1) plus OFF. */

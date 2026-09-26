@@ -1,5 +1,7 @@
 package com.tiagodias.igpsportkaroo
 
+import com.tiagodias.igpsportkaroo.automation.Command
+import com.tiagodias.igpsportkaroo.automation.RideAutomation
 import com.tiagodias.igpsportkaroo.ble.BleScanner
 import com.tiagodias.igpsportkaroo.ble.GattLightLink
 import com.tiagodias.igpsportkaroo.ble.ScanMatch
@@ -17,11 +19,13 @@ import io.hammerhead.karooext.models.DataPoint
 import io.hammerhead.karooext.models.DataType
 import io.hammerhead.karooext.models.Device
 import io.hammerhead.karooext.models.DeviceEvent
+import io.hammerhead.karooext.models.InRideAlert
 import io.hammerhead.karooext.models.OnBatteryStatus
 import io.hammerhead.karooext.models.OnConnectionStatus
 import io.hammerhead.karooext.models.OnDataPoint
 import io.hammerhead.karooext.models.ReleaseBluetooth
 import io.hammerhead.karooext.models.RequestBluetooth
+import io.hammerhead.karooext.models.RideState
 import io.hammerhead.karooext.models.SystemNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +35,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.util.Collections
 
@@ -42,6 +47,10 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     /** The per-connectDevice loop translating session.state into DeviceEvents; owned the same way as [LightHub.session]. */
     @Volatile
     private var deviceJob: Job? = null
+
+    /** Ride-start action and low-battery alerts; fed from the RideState consumer and the device loop. */
+    private val automation by lazy { RideAutomation(Settings(applicationContext)::automation) }
+    private var rideStateConsumer: String? = null
 
     override val types by lazy {
         listOf(
@@ -60,6 +69,11 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
             if (!connected) return@connect
             Timber.i("Karoo system connected; requesting Bluetooth")
             karooSystem.dispatch(RequestBluetooth(extension))
+            if (rideStateConsumer == null) {
+                rideStateConsumer = karooSystem.addConsumer { state: RideState ->
+                    execute(automation.onRideState(isRecording = state !is RideState.Idle))
+                }
+            }
             if (Permissions.missing(applicationContext).isNotEmpty()) {
                 karooSystem.dispatch(
                     SystemNotification(
@@ -121,6 +135,7 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
                     if (pct != lastBattery) {
                         emitter.onNext(OnBatteryStatus(BatteryStatus.fromPercentage(pct)))
                         lastBattery = pct
+                        execute(automation.onBattery(pct))
                     }
                     // Karoo treats a sensor as idle without ~1 Hz data points, even if unchanged.
                     emitter.onNext(OnDataPoint(DataPoint(batteryTypeId, mapOf(DataType.Field.SINGLE to pct.toDouble()), uid)))
@@ -137,7 +152,59 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         }
     }
 
+    /**
+     * Runs automation [commands]. Mode changes wait (up to [RIDE_START_WAIT_MS]) for the light to be connected
+     * with its modes known: a ride usually starts right after the Karoo boots, before the light has connected.
+     */
+    @Synchronized // RideAutomation is not thread-safe: the ride-state consumer and the device loop both feed it.
+    private fun execute(commands: List<Command>) {
+        commands.forEach { command ->
+            when (command) {
+                is Command.SelectMode -> whenLightReady(command) { it.selectMode(command.mode) }
+                Command.SelectAuto -> whenLightReady(command) { it.selectAuto() }
+                is Command.LowBatteryAlert -> {
+                    Timber.i("Low battery alert: %d%%", command.percent)
+                    karooSystem.dispatch(
+                        InRideAlert(
+                            id = "igps-low-battery",
+                            icon = R.drawable.ic_light,
+                            title = getString(R.string.low_battery_title, command.percent),
+                            detail = getString(R.string.low_battery_detail),
+                            autoDismissMs = 10_000L,
+                            backgroundColor = R.color.alert_background,
+                            textColor = R.color.alert_text,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun whenLightReady(command: Command, action: (LightSession) -> Boolean) {
+        scope.launch {
+            val session = withTimeoutOrNull(RIDE_START_WAIT_MS) {
+                var ready = readySession()
+                while (ready == null) {
+                    delay(1000)
+                    ready = readySession()
+                }
+                ready
+            }
+            if (session == null) {
+                Timber.w("%s dropped: the light was not ready within %d ms", command, RIDE_START_WAIT_MS)
+                return@launch
+            }
+            Timber.i("%s (sent=%b)", command, action(session))
+        }
+    }
+
+    /** The current session once its light is connected and has reported its modes, else null. */
+    private fun readySession(): LightSession? =
+        LightHub.session?.takeIf { session -> session.state.value.let { it.connected && it.declaredModes.isNotEmpty() } }
+
     override fun onDestroy() {
+        rideStateConsumer?.let(karooSystem::removeConsumer)
+        rideStateConsumer = null
         deviceJob?.cancel()
         deviceJob = null
         LightHub.session?.stop()
@@ -153,5 +220,6 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         const val UID_PREFIX = "igps-"
         const val SETTINGS_ACTION = "com.tiagodias.igpsportkaroo.SETTINGS"
         const val CONTROL_ACTION = "com.tiagodias.igpsportkaroo.CONTROL"
+        const val RIDE_START_WAIT_MS = 60_000L
     }
 }
