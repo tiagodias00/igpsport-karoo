@@ -83,3 +83,49 @@ def test_looks_like_igps():
     assert igps.looks_like_igps(None, [igps.ADVERT_MARKER.upper()])
     assert not igps.looks_like_igps("VS1800S_U", [igps.ADVERT_MARKER])
     assert not igps.looks_like_igps("Garmin HRM", [])
+
+
+# Custom modes (docs/custom-modes-research.md §8). Derived vectors, computed with igps.message().
+READ_CUSTOM_64 = H("016A03FF02FFFF000A2B01FFFFFFFFFFFFFFFF79086A10021803" "3A020840")
+SELECT_STEADY_64 = H("016A03FF01FFFF000AA801FFFFFFFFFFFFFFFFF9086A10011803" "62020840")
+SELECT_FLASH_64 = H("016A03FF01FFFF000CB601FFFFFFFFFFFFFFFFC9086A10011803" "620408401001")
+STEADY_MAIN_40 = H("016A03FF01FFFF00102401FFFFFFFFFFFFFFFF36086A10011803" "620808401A0408021028")
+STEADY_HIGHBEAM_40 = H("016A03FF01FFFF000E2001FFFFFFFFFFFFFFFFF2086A10011803" "620608401A021028")
+FLASH_CYCLE_2 = H("016A03FF01FFFF00109501FFFFFFFFFFFFFFFF7E086A10011803" "62080840100122020802")
+FLASH_RATIO_30 = H("016A03FF01FFFF0010B701FFFFFFFFFFFFFFFF63086A10011803" "6208084010012A02081E")
+# Illustrative reply (NOT captured): selected steady; steady main 30 %; flash main 100 %, 2 s, 30 %.
+REPLY_CUSTOM_64 = H(
+    "016A03FF02FFFF00244201FFFFFFFFFFFFFFFFC1086A10021803"
+    "421C0840"                                  # field 8 {1: 64}
+    "1A0612040802101E"                          # steady: light 2 = 30 %
+    "1A1008011204080210641A020802" "22" "02081E"  # flash: light 2 = 100 %, cycle 2, ratio 30
+)
+
+
+def test_custom_mode_builders():
+    assert igps.read_custom_mode(64) == READ_CUSTOM_64
+    assert igps.modify_custom_mode(64, igps.STEADY) == SELECT_STEADY_64
+    assert igps.modify_custom_mode(64, igps.FLASH) == SELECT_FLASH_64
+    assert igps.modify_custom_mode(64, igps.STEADY, light=(2, 40)) == STEADY_MAIN_40
+    assert igps.modify_custom_mode(64, igps.STEADY, light=(0, 40)) == STEADY_HIGHBEAM_40
+    assert igps.modify_custom_mode(64, igps.FLASH, cycle=2) == FLASH_CYCLE_2
+    assert igps.modify_custom_mode(64, igps.FLASH, ratio=30) == FLASH_RATIO_30
+
+
+def test_modify_custom_mode_takes_one_change():
+    import pytest
+    with pytest.raises(ValueError):
+        igps.modify_custom_mode(64, igps.FLASH, cycle=2, ratio=30)
+
+
+def test_parse_custom_mode_reply():
+    assert igps.parse_frame(REPLY_CUSTOM_64) == {"custom_mode": {
+        "mode": 64, "selected": 0, "patterns": [
+            {"subtype": 0, "lights": [(2, 30)], "cycle": None, "ratio": None},
+            {"subtype": 1, "lights": [(2, 100)], "cycle": 2, "ratio": 30},
+        ]}}
+
+
+def test_ack_status():
+    assert igps.ack_status(ACK) == (2, 0)
+    assert igps.ack_status(RESP_MODE_3) is None

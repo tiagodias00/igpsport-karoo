@@ -16,6 +16,9 @@ TYPE_DATA, TYPE_ACK, TYPE_STATE = 1, 2, 3
 SERVICE_LIGHT = 106
 OP_WRITE, OP_READ = 1, 2
 SUB_MODE_SUPPORTED, SUB_MODE_CURRENT, SUB_REMAINING_TIME, SUB_BATTERY, SUB_MODE_ENABLE = 1, 2, 5, 6, 7
+SUB_CUSTOM_MODE = 3
+F_CUSTOM_MODE_GET, F_CUSTOM_MODE_ARG, F_CUSTOM_MODE_MODIFY = 7, 8, 12
+STEADY, FLASH, BREATH = 0, 1, 2  # BLE_LIGHT_CUSTOM_SUBTYPE
 
 MODE_LABELS = {
     0: "OFF", 1: "HIGH", 2: "MID", 3: "LOW", 4: "FLASH HI", 5: "FLASH LO", 6: "PULSE",
@@ -125,6 +128,61 @@ def set_mode_enabled(mode: int, enabled: bool) -> bytes:
     return message(SUB_MODE_ENABLE, OP_WRITE, message_field(11, inner))
 
 
+def _optional(field: int, value: int) -> bytes:
+    """proto3: a zero value is left out of the frame."""
+    return varint_field(field, value) if value else b""
+
+
+def read_custom_mode(mode: int) -> bytes:
+    return message(SUB_CUSTOM_MODE, OP_READ, message_field(F_CUSTOM_MODE_GET, varint_field(1, mode)))
+
+
+def modify_custom_mode(mode: int, subtype: int, light=None, cycle=None, ratio=None) -> bytes:
+    """One change to custom mode `mode`, playing `subtype`. light=(light_num, pct). At most one change."""
+    if sum(x is not None for x in (light, cycle, ratio)) > 1:
+        raise ValueError("one change per write")
+    inner = varint_field(1, mode) + _optional(2, subtype)
+    if light is not None:
+        inner += message_field(3, _optional(1, light[0]) + _optional(2, light[1]))
+    if cycle is not None:
+        inner += message_field(4, _optional(1, cycle))
+    if ratio is not None:
+        inner += message_field(5, _optional(1, ratio))
+    return message(SUB_CUSTOM_MODE, OP_WRITE, message_field(F_CUSTOM_MODE_MODIFY, inner))
+
+
+def _inner_int(values):
+    """First value of a one-int sub-message field ({1: n}); None if the field is absent."""
+    if not values or not isinstance(values[0], bytes):
+        return None
+    return _first(parse_proto(values[0]) or {}, 1) or 0
+
+
+def parse_custom_mode(arg: bytes):
+    fields = parse_proto(arg)
+    if not fields or _first(fields, 1) is None:
+        return None
+    patterns = []
+    for raw in fields.get(3, []):
+        cfg = parse_proto(raw) if isinstance(raw, bytes) else None
+        if cfg is None:
+            continue
+        lights = []
+        for entry in cfg.get(2, []):
+            e = parse_proto(entry) or {}
+            lights.append((_first(e, 1) or 0, _first(e, 2) or 0))
+        patterns.append({"subtype": _first(cfg, 1) or 0, "lights": lights,
+                         "cycle": _inner_int(cfg.get(3)), "ratio": _inner_int(cfg.get(4))})
+    return {"mode": _first(fields, 1), "selected": _first(fields, 2) or 0, "patterns": patterns}
+
+
+def ack_status(frame: bytes):
+    """(sub-service, status) of an ACK frame; status 0 = success. None for any other frame."""
+    if not header_valid(frame) or frame[0] != TYPE_ACK:
+        return None
+    return frame[2], frame[7]
+
+
 def chunks(frame: bytes, size: int = 20) -> list:
     return [frame[i:i + size] for i in range(0, len(frame), size)]
 
@@ -183,6 +241,9 @@ def parse_frame(frame: bytes):
             if e and _first(e, 1) is not None:
                 declared[_first(e, 1)] = bool(_first(e, 3) or 0)
         out["declared_modes"] = declared
+    arg = _first(fields, F_CUSTOM_MODE_ARG)
+    if isinstance(arg, bytes):
+        out["custom_mode"] = parse_custom_mode(arg)
     return out
 
 

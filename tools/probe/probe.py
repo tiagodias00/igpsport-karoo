@@ -4,6 +4,9 @@
   python probe.py info  <ADDRESS>        # GATT table + battery + modes + current mode
   python probe.py mode  <ADDRESS> <N> [--enable]   # set mode N (enable it first if needed)
   python probe.py watch <ADDRESS> [secs] # print every frame (press the light's button!)
+  python probe.py custom-read <ADDRESS> [MODE]            # read custom mode MODE (default 64)
+  python probe.py custom-set  <ADDRESS> MODE [--subtype S] [--light N P | --cycle C | --ratio R]
+                                                          # one change, then read it back
 
 The iGPSPORT phone app must be closed / phone Bluetooth off: the light accepts one connection.
 """
@@ -27,6 +30,18 @@ def describe(update: dict) -> str:
         modes = ", ".join(f"{m}:{igps.label(m)}{'' if on else ' (disabled)'}"
                           for m, on in update["declared_modes"].items())
         parts.append(f"declared modes=[{modes}]")
+    if "custom_mode" in update:
+        c = update["custom_mode"]
+        if c is None:
+            parts.append("custom mode: (empty reply)")
+        else:
+            names = {igps.STEADY: "steady", igps.FLASH: "flash", igps.BREATH: "breath"}
+            pats = []
+            for p in c["patterns"]:
+                lights = ", ".join(f"light {n}: {pct}%" for n, pct in p["lights"])
+                extra = "".join(f", {k} {p[k]}" for k in ("cycle", "ratio") if p[k] is not None)
+                pats.append(f"{names.get(p['subtype'], p['subtype'])} [{lights}{extra}]")
+            parts.append(f"custom {c['mode']}: plays {names.get(c['selected'], c['selected'])}; " + "; ".join(pats))
     return "; ".join(parts) or "(empty update)"
 
 
@@ -40,7 +55,8 @@ class Session:
         print(f"   <- {bytes(data).hex(' ').upper()}")
         for frame in self.assembler.push(bytes(data)):
             if frame[0] == igps.TYPE_ACK:
-                print("      ACK")
+                sub, status = igps.ack_status(frame) or (frame[2], frame[7])
+                print(f"      ACK sub={sub} status={status}{'' if status == 0 else '  <== REJECTED'}")
                 continue
             update = igps.parse_frame(frame)
             if update is None:
@@ -111,6 +127,27 @@ async def cmd_watch(address: str, seconds: float):
         await asyncio.sleep(seconds)
 
 
+async def cmd_custom_read(address: str, mode: int):
+    async with BleakClient(address, timeout=20.0) as client:
+        session = Session(client)
+        await client.start_notify(igps.UART_NOTIFY, session.on_notify)
+        await session.send(igps.read_custom_mode(mode), f"read custom mode {mode}")
+        await asyncio.sleep(2.0)
+
+
+async def cmd_custom_set(address: str, mode: int, subtype: int, light, cycle, ratio):
+    async with BleakClient(address, timeout=20.0) as client:
+        session = Session(client)
+        await client.start_notify(igps.UART_NOTIFY, session.on_notify)
+        frame = igps.modify_custom_mode(mode, subtype, light=tuple(light) if light else None, cycle=cycle, ratio=ratio)
+        await session.send(frame, f"custom {mode}: subtype {subtype} light={light} cycle={cycle} ratio={ratio}")
+        await asyncio.sleep(1.5)
+        await session.send(igps.read_custom_mode(mode), "read it back")
+        await asyncio.sleep(1.5)
+        await session.send(igps.read_remaining_time(), "read remaining time")
+        await asyncio.sleep(1.5)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -125,6 +162,17 @@ def main():
     p = sub.add_parser("watch")
     p.add_argument("address")
     p.add_argument("seconds", nargs="?", type=float, default=60.0)
+    p = sub.add_parser("custom-read")
+    p.add_argument("address")
+    p.add_argument("mode", nargs="?", type=int, default=64)
+    p = sub.add_parser("custom-set")
+    p.add_argument("address")
+    p.add_argument("mode", type=int)
+    p.add_argument("--subtype", type=int, default=igps.STEADY)
+    change = p.add_mutually_exclusive_group()
+    change.add_argument("--light", nargs=2, type=int, metavar=("LIGHT_NUM", "PCT"))
+    change.add_argument("--cycle", type=int)
+    change.add_argument("--ratio", type=int)
     args = parser.parse_args()
     if args.cmd == "scan":
         asyncio.run(cmd_scan(args.seconds))
@@ -132,6 +180,10 @@ def main():
         asyncio.run(cmd_info(args.address))
     elif args.cmd == "mode":
         asyncio.run(cmd_mode(args.address, args.mode, args.enable))
+    elif args.cmd == "custom-read":
+        asyncio.run(cmd_custom_read(args.address, args.mode))
+    elif args.cmd == "custom-set":
+        asyncio.run(cmd_custom_set(args.address, args.mode, args.subtype, args.light, args.cycle, args.ratio))
     else:
         asyncio.run(cmd_watch(args.address, args.seconds))
 
