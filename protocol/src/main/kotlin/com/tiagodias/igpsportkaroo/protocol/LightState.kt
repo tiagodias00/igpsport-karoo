@@ -15,9 +15,11 @@ data class LightState(
     val auxBatteryPercent: Int? = null,
     /** Auto light has switched the output off (daylight); the light still reports its mode as before. */
     val outputOff: Boolean = false,
-    /** The last [LightModes.STEADY] / [LightModes.FLASHING] mode reported, so SOLID / FLASH go back to it. */
+    /** The last steady / flashing mode reported ([isSteady] / [isFlashing]), so SOLID / FLASH go back to it. */
     val lastSteadyMode: Int? = null,
     val lastFlashMode: Int? = null,
+    /** Custom slot configs read from the light (sub 3), by mode. */
+    val customModes: Map<Int, CustomModeConfig> = emptyMap(),
     /**
      * True while auto light looks like it dimmed itself (inferred from run-time jumps by [AutoDimTracker]).
      * Like [poweredOff], `apply()` must leave this untouched: it is owned and recomputed by the session.
@@ -34,22 +36,39 @@ data class LightState(
      * a disabled mode enables it first), so a light that ships a group disabled still offers it. Once any level
      * of a group is enabled, the disabled ones are left alone.
      */
-    val steadyLevels: List<Int> get() = selectable(LightModes::steadyLevels)
+    val steadyLevels: List<Int> get() = selectable { LightModes.steadyLevels(it, customModes) }
 
     /** The flash levels FLASH cycles, chosen like [steadyLevels]. */
-    val flashLevels: List<Int> get() = selectable(LightModes::flashLevels)
+    val flashLevels: List<Int> get() = selectable { LightModes.flashLevels(it, customModes) }
 
-    /** The steady level SOLID goes to: the last one used, else the light's first. Null if none is known. */
-    val steadyLevel: Int? get() = lastSteadyMode ?: steadyLevels.firstOrNull()
+    /**
+     * The steady level SOLID goes to: the last one used while it is still steady, else the light's first. Null if
+     * none is known.
+     */
+    val steadyLevel: Int? get() = lastSteadyMode?.takeIf { isSteady(it) } ?: steadyLevels.firstOrNull()
 
-    /** The flash level FLASH goes to: the last one used, else the light's first. Null if none is known. */
-    val flashLevel: Int? get() = lastFlashMode ?: flashLevels.firstOrNull()
+    /**
+     * The flash level FLASH goes to: the last one used while it still blinks, else the light's first. Null if none
+     * is known.
+     */
+    val flashLevel: Int? get() = lastFlashMode?.takeIf { isFlashing(it) } ?: flashLevels.firstOrNull()
+
+    /** Whether [mode] is steady (SOLID), classifying a custom slot by its known config ([LightModes.isSteady]). */
+    fun isSteady(mode: Int?): Boolean = mode != null && LightModes.isSteady(mode, customModes)
+
+    /** Whether [mode] blinks (FLASH), classifying a custom slot by its known config ([LightModes.isFlashing]). */
+    fun isFlashing(mode: Int?): Boolean = mode != null && LightModes.isFlashing(mode, customModes)
+
+    fun labelOf(mode: Int): String = LightModes.label(mode, customModes)
+
+    fun shortLabelOf(mode: Int): String = LightModes.shortLabel(mode, customModes)
 
     private fun selectable(levels: (List<Int>) -> List<Int>): List<Int> =
         levels(enabledModes).ifEmpty { levels(declaredModes.keys.toList()) }
 
     fun apply(update: LightUpdate): LightState {
         val newMode = update.mode
+        val customs = update.customMode?.let { customModes + (it.mode to it) } ?: customModes
         return copy(
             mode = newMode ?: mode,
             batteryPercent = update.batteryPercent ?: batteryPercent,
@@ -58,8 +77,9 @@ data class LightState(
             smartConfigs = update.smartConfigs ?: smartConfigs,
             auxBatteryPercent = update.auxBatteryPercent ?: auxBatteryPercent,
             outputOff = update.outputOff ?: outputOff,
-            lastSteadyMode = newMode?.takeIf { it in LightModes.STEADY } ?: lastSteadyMode,
-            lastFlashMode = newMode?.takeIf { it in LightModes.FLASHING } ?: lastFlashMode,
+            customModes = customs,
+            lastSteadyMode = newMode?.takeIf { LightModes.isSteady(it, customs) } ?: lastSteadyMode,
+            lastFlashMode = newMode?.takeIf { LightModes.isFlashing(it, customs) } ?: lastFlashMode,
         )
     }
 }

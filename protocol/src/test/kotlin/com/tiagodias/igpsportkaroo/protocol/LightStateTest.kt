@@ -90,4 +90,36 @@ class LightStateTest {
         assertEquals(5, oneFlashEnabled.flashLevel)
         assertEquals(emptyList<Int>(), LightState().flashLevels)
     }
+
+    private val c1Steady = CustomModeConfig(64, CustomMode.STEADY, listOf(CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30)))))
+    private val vs1200s = LightState(declaredModes = linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true, 64 to true))
+
+    @Test
+    fun `apply stores custom configs by slot`() {
+        val s = vs1200s.apply(LightUpdate(customMode = c1Steady)).apply(LightUpdate(batteryPercent = 50))
+        assertEquals(mapOf(64 to c1Steady), s.customModes)
+        val flashing = c1Steady.copy(selected = CustomMode.FLASH)
+        assertEquals(mapOf(64 to flashing), s.apply(LightUpdate(customMode = flashing)).customModes)
+    }
+
+    @Test
+    fun `a flashing custom mode is remembered as the last flash level`() {
+        val s = vs1200s.apply(LightUpdate(customMode = c1Steady.copy(selected = CustomMode.FLASH))).apply(LightUpdate(mode = 64))
+        assertEquals(64, s.lastFlashMode)
+        assertEquals(64, s.flashLevel)
+        assertEquals(1, s.steadyLevel)
+        assertEquals(listOf(4, 5, 64), s.flashLevels)
+    }
+
+    @Test
+    fun `a steady level that starts flashing is no longer the steady level`() {
+        val used = vs1200s.apply(LightUpdate(customMode = c1Steady)).apply(LightUpdate(mode = 64))
+        assertEquals(64, used.steadyLevel)
+        val edited = used.apply(LightUpdate(customMode = c1Steady.copy(selected = CustomMode.FLASH)))
+        assertEquals(1, edited.steadyLevel) // falls back to the brightest steady level
+        assertTrue(edited.isFlashing(64))
+        assertFalse(edited.isSteady(64))
+        assertEquals("C1 FLASH", edited.labelOf(64))
+        assertEquals("C1", edited.shortLabelOf(64))
+    }
 }

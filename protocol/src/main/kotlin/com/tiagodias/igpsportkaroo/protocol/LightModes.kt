@@ -14,7 +14,10 @@ object LightModes {
     /** Flash modes in FLASH cycle order. */
     private val FLASH_RANK = listOf(4, 5, 6, 17)
 
-    /** Modes that light continuously (SOLID). Custom modes count: they are steady on this light family. */
+    /**
+     * Modes that light continuously (SOLID). Custom slots are here too, for callers without configs; use [isSteady]
+     * when configs are known.
+     */
     val STEADY: Set<Int> = STEADY_RANK.toSet()
 
     /** Modes that blink (FLASH). */
@@ -45,9 +48,38 @@ object LightModes {
         return if (index < 0) cycle.first() else cycle[(index + 1) % cycle.size]
     }
 
-    /** The steady modes among [modes], brightest first (VS1200S: HIGH, MID, LOW). */
-    fun steadyLevels(modes: List<Int>): List<Int> = STEADY_RANK.filter { it in modes }
+    /**
+     * Steady (SOLID): a custom slot counts while its selected pattern is steady, or while its config is unknown
+     * (that was the behaviour before configs could be read). Other modes by [STEADY].
+     */
+    fun isSteady(mode: Int, customs: Map<Int, CustomModeConfig> = emptyMap()): Boolean =
+        if (mode in CUSTOM) customs[mode]?.blinks != true else mode in STEADY
 
-    /** The flash modes among [modes], in [FLASH_RANK] order. */
-    fun flashLevels(modes: List<Int>): List<Int> = FLASH_RANK.filter { it in modes }
+    /** Flashing (FLASH): a custom slot only while its selected pattern is known to blink (flash or breath). */
+    fun isFlashing(mode: Int, customs: Map<Int, CustomModeConfig> = emptyMap()): Boolean =
+        if (mode in CUSTOM) customs[mode]?.blinks == true else mode in FLASHING
+
+    /** The steady modes among [modes], brightest first (VS1200S: HIGH, MID, CUSTOM 1 while steady). */
+    fun steadyLevels(modes: List<Int>, customs: Map<Int, CustomModeConfig> = emptyMap()): List<Int> =
+        STEADY_RANK.filter { it in modes && isSteady(it, customs) }
+
+    /** The flash modes among [modes], in [FLASH_RANK] order, then custom slots that blink. */
+    fun flashLevels(modes: List<Int>, customs: Map<Int, CustomModeConfig> = emptyMap()): List<Int> =
+        (FLASH_RANK + CUSTOM).filter { it in modes && isFlashing(it, customs) }
+
+    /** [label], but a custom slot with a known config says what it does: "C1 30%", "C1 FLASH", "C1 BREATH". */
+    fun label(mode: Int, customs: Map<Int, CustomModeConfig>): String {
+        val config = customs[mode]?.takeIf { mode in CUSTOM } ?: return label(mode)
+        val slot = "C${mode - 63}"
+        return when (config.selected) {
+            CustomMode.STEADY -> config.brightness?.let { "$slot $it%" } ?: slot
+            CustomMode.FLASH -> "$slot FLASH"
+            CustomMode.BREATH -> "$slot BREATH"
+            else -> slot
+        }
+    }
+
+    /** [shortLabel], but "C<n>" for a custom slot with a known config (the old "LO" may no longer be true). */
+    fun shortLabel(mode: Int, customs: Map<Int, CustomModeConfig>): String =
+        if (mode in CUSTOM && mode in customs) "C${mode - 63}" else shortLabel(mode)
 }
