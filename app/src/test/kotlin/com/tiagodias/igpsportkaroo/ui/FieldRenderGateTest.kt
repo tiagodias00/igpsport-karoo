@@ -7,15 +7,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FieldRenderGateTest {
-    private val gate = FieldRenderGate<String>()
+    private var clock = 0L
+    private val errors = mutableListOf<Throwable>()
+    private val gate = FieldRenderGate<String>(clock = { clock }, onError = { errors += it })
     private val rendered = mutableListOf<Pair<Long, String>>()
 
     /** Offers [ui] every 100 ms (the view loop's poll) from [from] until [to], inclusive. */
     private suspend fun poll(ui: String, from: Long, to: Long) {
-        var t = from
-        while (t <= to) {
-            gate.offer(ui, t) { rendered += t to it }
-            t += 100
+        clock = from
+        while (clock <= to) {
+            gate.offer(ui) { rendered += clock to it }
+            clock += 100
         }
     }
 
@@ -61,29 +63,51 @@ class FieldRenderGateTest {
         assertTrue(times.zipWithNext().all { (a, b) -> b - a >= 950 })
     }
 
+    // Karoo's own gate counts from when updateView ran, which ends a slow compose: the window must start there.
+    @Test
+    fun `the render window starts when the render returns, not when it starts`() = runTest {
+        val returnedAt = mutableListOf<Long>()
+        gate.offer("A") {
+            clock += 400 // a slow compose
+            returnedAt += clock
+        }
+        clock = 1_000 // 1000 ms after the start, only 600 ms after updateView
+        assertFalse(gate.offer("B") { returnedAt += clock })
+        clock = 1_350 // 950 ms after updateView
+        assertTrue(gate.offer("B") { returnedAt += clock })
+        assertEquals(listOf(400L, 1_350L), returnedAt)
+    }
+
     @Test
     fun `a render that throws is not marked rendered and is retried`() = runTest {
         var failNext = true
-        var t = 0L
-        while (t <= 2_000) {
-            val at = t
-            gate.offer("A", at) {
+        clock = 0
+        while (clock <= 2_000) {
+            gate.offer("A") {
                 if (failNext) {
                     failNext = false
                     throw IllegalStateException("compose failed")
                 }
-                rendered += at to it
+                rendered += clock to it
             }
-            t += 100
+            clock += 100
         }
         assertEquals(listOf(1_000L to "A"), rendered) // retried once the window after the failed attempt opened
     }
 
     @Test
     fun `a throwing render reports the error instead of propagating it`() = runTest {
-        val errors = mutableListOf<Throwable>()
-        val gate = FieldRenderGate<String>(onError = { errors += it })
-        assertFalse(gate.offer("A", 0) { throw IllegalStateException("boom") })
+        assertFalse(gate.offer("A") { throw IllegalStateException("boom") })
         assertEquals(1, errors.size)
+    }
+
+    @Test
+    fun `render errors are reported at most once per 30 s`() = runTest {
+        clock = 0
+        while (clock <= 60_000) {
+            gate.offer("A") { throw IllegalStateException("boom") }
+            clock += 100
+        }
+        assertEquals(3, errors.size) // at 0, ~30 s and ~60 s, though a render was attempted about every second
     }
 }

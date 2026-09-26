@@ -8,6 +8,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class RideAutomationTest {
+    private companion object {
+        const val HOUR = 3_600_000L
+    }
+
     private var settings = AutomationSettings(RideStart.Mode(1), lowBatteryAlerts = true, offAtRideEnd = true)
     private val automation = RideAutomation(settings = { settings })
 
@@ -52,6 +56,33 @@ class RideAutomationTest {
     fun `a restart while idle still applies the next ride start`() {
         val restarted = RideAutomation(settings = { settings }, initialRecording = false)
         assertEquals(listOf(SelectMode(1)), restarted.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `a stale persisted recording state is not a ride in progress`() {
+        // e.g. the Karoo powered off mid-ride and the ride's Idle event never reached us: a day later the
+        // persisted "recording" must not swallow the next real ride start.
+        val now = 1_000_000_000_000L
+        val stale = RideAutomation.restoredRecording(lastRecording = true, lastRecordingAt = now - 25 * HOUR, now = now)
+        val restarted = RideAutomation(settings = { settings }, initialRecording = stale)
+        assertEquals(listOf(SelectMode(1)), restarted.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `a fresh persisted recording state is a ride in progress`() {
+        val now = 1_000_000_000_000L
+        val fresh = RideAutomation.restoredRecording(lastRecording = true, lastRecordingAt = now - 2 * HOUR, now = now)
+        val restarted = RideAutomation(settings = { settings }, initialRecording = fresh)
+        assertEquals(emptyList<Command>(), restarted.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `a persisted idle state or a missing timestamp is not a ride in progress`() {
+        val now = 1_000_000_000_000L
+        assertEquals(false, RideAutomation.restoredRecording(lastRecording = false, lastRecordingAt = now, now = now))
+        assertEquals(false, RideAutomation.restoredRecording(lastRecording = true, lastRecordingAt = null, now = now))
+        // A clock set back far behind the stored timestamp: trust neither.
+        assertEquals(false, RideAutomation.restoredRecording(lastRecording = true, lastRecordingAt = now + 25 * HOUR, now = now))
     }
 
     @Test

@@ -39,13 +39,16 @@ abstract class GlanceFieldDataType(extension: String, typeId: String) : DataType
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val size = DpSize((config.viewSize.first / density).dp, (config.viewSize.second / density).dp)
         val job = CoroutineScope(Dispatchers.IO).launch {
-            // One failed render (compose or the Binder call) must not end the loop: it is logged and retried.
-            val gate = FieldRenderGate<FieldUi>(onError = { e -> Timber.w(e, "field %s render failed", typeId) })
+            // One failed render (compose or the Binder call) must not end the loop: it is retried, and logged at most every 30 s.
+            val gate = FieldRenderGate<FieldUi>(
+                clock = SystemClock::elapsedRealtime,
+                onError = { e -> Timber.w(e, "field %s render failed", typeId) },
+            )
             while (isActive) {
                 val state = if (config.preview) PREVIEW_STATE else LightHub.session?.state?.value ?: LightState()
                 val ui = FieldUi.from(state)
                 // Poll fast so a tap shows on the next open render window; the gate keeps renders >= 950 ms apart.
-                gate.offer(ui, SystemClock.elapsedRealtime()) {
+                gate.offer(ui) {
                     val views = glance.compose(context, size) { Content(it, interactive = !config.preview, size) }
                     emitter.updateView(views.remoteViews)
                     if (BuildConfig.DEBUG) Timber.d("field %s render: %s", typeId, it.headline)

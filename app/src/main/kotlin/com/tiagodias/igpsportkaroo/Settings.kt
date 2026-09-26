@@ -20,9 +20,17 @@ class Settings(context: Context) {
         set(value) { prefs.edit().putBoolean("off_at_ride_end", value).apply() }
 
     /** Whether a ride was recording at the last ride-state event: tells a restart mid-ride from a ride start. */
-    var lastRecording: Boolean
+    val lastRecording: Boolean
         get() = prefs.getBoolean("last_recording", false)
-        set(value) { prefs.edit().putBoolean("last_recording", value).apply() }
+
+    /** When [lastRecording] was last written (wall clock, ms), null if never: an old one is not trusted. */
+    val lastRecordingAt: Long?
+        get() = prefs.getLong("last_recording_at", -1L).takeIf { it >= 0 }
+
+    /** Persists one ride-state event: [recording] and [at] (wall clock, ms) together. */
+    fun saveRecording(recording: Boolean, at: Long) {
+        prefs.edit().putBoolean("last_recording", recording).putLong("last_recording_at", at).apply()
+    }
 
     fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts, offAtRideEnd)
 

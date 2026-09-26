@@ -1,6 +1,7 @@
 package com.tiagodias.igpsportkaroo
 
 import android.content.Intent
+import android.os.SystemClock
 import com.tiagodias.igpsportkaroo.automation.Command
 import com.tiagodias.igpsportkaroo.automation.RideAutomation
 import com.tiagodias.igpsportkaroo.ble.BleScanner
@@ -56,10 +57,13 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     private val automation by lazy {
         RideAutomation(
             settings = settings::automation,
-            initialRecording = settings.lastRecording,
-            onRecordingChanged = { recording ->
-                if (recording != settings.lastRecording) settings.lastRecording = recording
-            },
+            // Wall clock on purpose: the persisted state must survive reboots.
+            initialRecording = RideAutomation.restoredRecording(
+                lastRecording = settings.lastRecording,
+                lastRecordingAt = settings.lastRecordingAt,
+                now = System.currentTimeMillis(),
+            ),
+            onRecordingChanged = { recording -> settings.saveRecording(recording, System.currentTimeMillis()) },
         )
     }
     private var rideStateConsumer: String? = null
@@ -127,7 +131,12 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         val address = uid.removePrefix(UID_PREFIX)
         Timber.i("connectDevice %s", address)
         val frameLog: ((String) -> Unit)? = if (BuildConfig.DEBUG) { line -> Timber.d(line) } else null
-        val session = LightSession(GattLightLink(applicationContext), address, scope, frameLog = frameLog)
+        // Monotonic: the OFF settle window and the reconnect rate limit must not jump with a wall-clock resync.
+        val session = LightSession(
+            GattLightLink(applicationContext), address, scope,
+            now = { SystemClock.elapsedRealtime() },
+            frameLog = frameLog,
+        )
         deviceJob?.cancel()
         LightHub.session?.stop()
         LightHub.session = session

@@ -1,5 +1,7 @@
 package com.tiagodias.igpsportkaroo.automation
 
+import kotlin.math.abs
+
 data class AutomationSettings(val rideStart: RideStart, val lowBatteryAlerts: Boolean, val offAtRideEnd: Boolean)
 
 /** What the extension should do in response to a ride or battery event. */
@@ -18,7 +20,7 @@ sealed interface Command {
  * Whether a ride is recording survives extension restarts: [initialRecording] is the last state persisted,
  * and [onRecordingChanged] persists every ride state seen. Karoo does not send the current ride state when
  * the consumer registers (device log 13:46), so the first event can be a real ride start and is not ignored;
- * a restart mid-ride is told apart by the persisted state instead.
+ * a restart mid-ride is told apart by the persisted state instead (see [restoredRecording] for a stale one).
  */
 class RideAutomation(
     private val settings: () -> AutomationSettings,
@@ -68,5 +70,18 @@ class RideAutomation(
     companion object {
         val THRESHOLDS = listOf(20, 10)
         const val RESET_ABOVE = 30
+
+        /** How long a persisted "recording" is trusted: an older one most likely missed its ride's end. */
+        const val RECORDING_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000L
+
+        /**
+         * The [initialRecording] to seed from the persisted state: [lastRecording], saved at [lastRecordingAt]
+         * (wall clock, so it survives reboots), is trusted only when saved within [RECORDING_STATE_MAX_AGE_MS] of
+         * [now], either way (a clock resynced backwards is tolerated as much as time passing). Otherwise the
+         * ride's Idle event was probably missed (e.g. the Karoo powered off mid-ride), and trusting it would
+         * swallow the next real ride start.
+         */
+        fun restoredRecording(lastRecording: Boolean, lastRecordingAt: Long?, now: Long): Boolean =
+            lastRecording && lastRecordingAt != null && abs(now - lastRecordingAt) < RECORDING_STATE_MAX_AGE_MS
     }
 }
