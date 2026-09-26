@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -53,6 +54,8 @@ class MainActivity : Activity() {
     private lateinit var retry: Button
     private lateinit var features: LinearLayout
     private val featureSwitches = mutableMapOf<Int, Switch>()
+    /** Under a switch the app can pause (auto sleep): says so while it is paused. */
+    private val featureHints = mutableMapOf<Int, TextView>()
     private val rideStartChoices = RideStart.choices(Settings.CHOOSABLE_MODES)
     private lateinit var rideStartLabels: ArrayAdapter<String>
 
@@ -283,6 +286,7 @@ class MainActivity : Activity() {
             renderedFeatures = visible
             features.removeAllViews()
             featureSwitches.clear()
+            featureHints.clear()
             if (visible.isEmpty()) features.addView(text(size = 14f).apply { setText(R.string.features_unknown) })
             visible.forEach { feature ->
                 featureSwitches[feature.id] = Switch(this).apply {
@@ -291,7 +295,17 @@ class MainActivity : Activity() {
                     setPadding(0, dp(8), 0, 0)
                 }.also(features::addView)
                 feature.subtitle?.let { features.addView(text(size = 13f).apply { setText(it); alpha = 0.7f }) }
+                if (feature.id == SmartConfig.AUTO_SLEEP) {
+                    featureHints[feature.id] = text(size = 13f).apply {
+                        setText(R.string.feature_auto_sleep_paused)
+                        setTypeface(typeface, Typeface.ITALIC)
+                    }.also(features::addView)
+                }
             }
+        }
+        featureHints.forEach { (id, hint) ->
+            // The switch shows the light's real state (off); this says why, and that it comes back on by itself.
+            hint.visibility = if (SmartFeatures.pausedWhileOff(id, state)) View.VISIBLE else View.GONE
         }
         featureSwitches.forEach { (id, switch) ->
             // Detached while refreshing, so showing the light's state never writes it back.
