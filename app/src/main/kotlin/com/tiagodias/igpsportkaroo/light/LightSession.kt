@@ -7,6 +7,7 @@ import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.LightUpdate
+import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -134,7 +135,8 @@ class LightSession(
         if (!link.send(IgpsProtocol.setMode(mode))) return false
         offCommandAt = null
         // Optimistic: the field shows the new mode right away; the read-back below confirms or corrects it.
-        _state.update { it.copy(mode = mode, poweredOff = false) }
+        // Applied like a report, so the last steady / flash level is remembered too.
+        _state.update { it.apply(LightUpdate(mode = mode)).copy(poweredOff = false) }
         // The light only ACKs writes: read the mode back so the UI shows what it really did.
         return link.send(IgpsProtocol.readCurrentMode())
     }
@@ -145,6 +147,54 @@ class LightSession(
         val s = _state.value
         val next = LightModes.next(if (s.poweredOff) null else s.mode, s.enabledModes) ?: return false
         selectMode(next)
+    }
+
+    /**
+     * Switches smart config [id] ([SmartConfig]) on or off, then reads the configs back. The field shows the
+     * new status right away. False when not connected. Serialized on [commandLock].
+     */
+    fun setSmartConfig(id: Int, on: Boolean): Boolean = synchronized(commandLock) {
+        val status = if (on) SmartConfig.ON else SmartConfig.OFF
+        if (!link.send(IgpsProtocol.setSmartConfig(id, status))) return false
+        _state.update { it.copy(smartConfigs = it.smartConfigs + (id to status)) }
+        return link.send(IgpsProtocol.readSmartConfigs())
+    }
+
+    /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
+    fun selectSolid(): Boolean = selectManual(LightModes.STEADY, LightModes::steadyLevels) { it.steadyLevel }
+
+    /** FLASH: the same as [selectSolid] for the flash levels. */
+    fun selectFlash(): Boolean = selectManual(LightModes.FLASHING, LightModes::flashLevels) { it.flashLevel }
+
+    /** AUTO: switches auto light on, and the light itself on (current steady level) if we switched it off. */
+    fun selectAuto(): Boolean = synchronized(commandLock) {
+        val wasOff = _state.value.poweredOff
+        if (!setSmartConfig(SmartConfig.AUTO_LIGHT, on = true)) return false
+        if (!wasOff) return true
+        val level = _state.value.steadyLevel ?: return true
+        return selectMode(level)
+    }
+
+    /**
+     * Goes to a mode of [group]: the next of [levels] when the light is already in the group (on, manual),
+     * else [current] (the last one used, or the light's first). SOLID and FLASH are manual, so auto light is
+     * switched off first. One atomic step on [commandLock].
+     */
+    private fun selectManual(
+        group: Set<Int>,
+        levels: (List<Int>) -> List<Int>,
+        current: (LightState) -> Int?,
+    ): Boolean = synchronized(commandLock) {
+        val s = _state.value
+        val cycling = !s.poweredOff && !s.autoLightOn && s.mode in group
+        val next = if (cycling) LightModes.next(s.mode, levels(s.enabledModes)) else null
+        val target = next ?: current(s) ?: return false
+        if (s.autoLightOn) {
+            if (!setSmartConfig(SmartConfig.AUTO_LIGHT, on = false)) return false
+            // Manual modes always light, so a daylight "output off" no longer applies.
+            _state.update { it.copy(outputOff = false) }
+        }
+        return selectMode(target)
     }
 
     /** A mode report ends "off" unless it is the echo the light sends right after our OFF command. */
@@ -159,6 +209,7 @@ class LightSession(
         link.send(IgpsProtocol.readCurrentMode())
         link.send(IgpsProtocol.readBattery())
         link.send(IgpsProtocol.readRemainingTime())
+        link.send(IgpsProtocol.readSmartConfigs())
     }
 
     private companion object {

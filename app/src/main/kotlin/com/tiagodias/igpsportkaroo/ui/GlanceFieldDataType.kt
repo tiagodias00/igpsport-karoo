@@ -7,9 +7,9 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
-import com.tiagodias.igpsportkaroo.Settings
 import com.tiagodias.igpsportkaroo.light.LightHub
 import com.tiagodias.igpsportkaroo.protocol.LightState
+import com.tiagodias.igpsportkaroo.protocol.LightUpdate
 import io.hammerhead.karooext.extension.DataTypeImpl
 import io.hammerhead.karooext.internal.ViewEmitter
 import io.hammerhead.karooext.models.UpdateGraphicConfig
@@ -31,7 +31,6 @@ abstract class GlanceFieldDataType(extension: String, typeId: String) : DataType
 
     override fun startView(context: Context, config: ViewConfig, emitter: ViewEmitter) {
         emitter.onNext(UpdateGraphicConfig(showHeader = false))
-        val settings = Settings(context)
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val size = DpSize((config.viewSize.first / density).dp, (config.viewSize.second / density).dp)
         val job = CoroutineScope(Dispatchers.IO).launch {
@@ -39,7 +38,7 @@ abstract class GlanceFieldDataType(extension: String, typeId: String) : DataType
             var lastRenderAt: Long? = null // null until the first render, which happens right away
             while (isActive) {
                 val state = if (config.preview) PREVIEW_STATE else LightHub.session?.state?.value ?: LightState()
-                val ui = FieldUi.from(state, settings.slotModes())
+                val ui = FieldUi.from(state)
                 // Poll fast so a tap shows on the next open render window, but render only when something changed
                 // and at most once per MIN_RENDER_INTERVAL_MS: Karoo drops updateView calls < ~900 ms apart.
                 // A change inside the window stays pending (lastUi untouched) and renders once the window opens.
@@ -64,6 +63,10 @@ abstract class GlanceFieldDataType(extension: String, typeId: String) : DataType
         /** Minimum gap between updateView calls (Karoo's ViewEmitter drops updates < ~900 ms apart). */
         const val MIN_RENDER_INTERVAL_MS = 950L
 
-        val PREVIEW_STATE = LightState(connected = true, mode = 1, batteryPercent = 78, remainingMinutes = 200)
+        /** HIGH on a VS1200S (MID, HIGH, FLASH HI, FLASH LO), auto light off. */
+        val PREVIEW_STATE = LightState(
+            connected = true, batteryPercent = 78, remainingMinutes = 200,
+            declaredModes = linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true),
+        ).apply(LightUpdate(mode = 1))
     }
 }

@@ -5,7 +5,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
-import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
@@ -27,19 +26,26 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 
 /** Sizes of the two-part field; [REGULAR] is the original "Light controls" look, [SLIM] the "(slim)" variant. */
-data class FieldStyle(val buttonTextSp: Float, val footerTextSp: Float, val footerHeightDp: Float, val gapDp: Float) {
+data class FieldStyle(
+    val buttonTextSp: Float,
+    val detailTextSp: Float,
+    val footerTextSp: Float,
+    val footerHeightDp: Float,
+    val gapDp: Float,
+) {
     companion object {
-        val REGULAR = FieldStyle(buttonTextSp = 18f, footerTextSp = 16f, footerHeightDp = 30f, gapDp = 2f)
-        val SLIM = FieldStyle(buttonTextSp = 14f, footerTextSp = 12f, footerHeightDp = 20f, gapDp = 1f)
+        val REGULAR = FieldStyle(buttonTextSp = 18f, detailTextSp = 13f, footerTextSp = 16f, footerHeightDp = 30f, gapDp = 2f)
+        val SLIM = FieldStyle(buttonTextSp = 14f, detailTextSp = 11f, footerTextSp = 12f, footerHeightDp = 20f, gapDp = 1f)
     }
 }
 
 /**
- * ┌──────────┬──────────┬──────────┐
- * │  HIGH ●  │   LOW    │ FLASH HI │   tap = select that mode
- * ├──────────┴──────────┴──────────┤
- * │       78%  ·  3h 20m left      │   tap while searching = reconnect now
- * └────────────────────────────────┘
+ * ┌───────┬───────┬───────┬───────┐
+ * │ SOLID │ FLASH │ AUTO  │  OFF  │   tap SOLID / FLASH again = next level; active = green
+ * │ HIGH  │ FL LO │  95%  │       │
+ * ├───────┴───────┴───────┴───────┤
+ * │     78%  ·  3h 20m left       │   tap while searching = reconnect now
+ * └───────────────────────────────┘
  */
 @Composable
 fun LightField(ui: FieldUi, interactive: Boolean, style: FieldStyle = FieldStyle.REGULAR) {
@@ -48,7 +54,7 @@ fun LightField(ui: FieldUi, interactive: Boolean, style: FieldStyle = FieldStyle
         Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
             ui.buttons.forEachIndexed { index, button ->
                 if (index > 0) Spacer(GlanceModifier.width(gap))
-                ModeButton(button, enabled = interactive && ui.connected, style)
+                FieldButton(button, enabled = interactive && ui.connected, style)
             }
         }
         Spacer(GlanceModifier.height(gap))
@@ -63,23 +69,27 @@ fun LightField(ui: FieldUi, interactive: Boolean, style: FieldStyle = FieldStyle
 }
 
 @Composable
-private fun RowScope.ModeButton(button: FieldUi.Button, enabled: Boolean, style: FieldStyle) {
+private fun RowScope.FieldButton(button: FieldUi.Button, enabled: Boolean, style: FieldStyle) {
     var modifier = GlanceModifier.defaultWeight().fillMaxHeight().background(buttonBackground(button))
     // No click handler in preview mode, or it would hijack the Profiles editor (karoo-ext issue #48).
-    if (enabled && button.available) {
-        modifier = modifier.clickable(
-            actionRunCallback<SelectSlotAction>(actionParametersOf(SelectSlotAction.SLOT to button.slot)),
-        )
-    }
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    if (enabled && button.available) modifier = modifier.clickable(tapAction(button))
+    val color = if (button.available) WHITE else DIM
+    Column(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
-            text = if (button.active) "${button.label} ●" else button.label,
-            style = TextStyle(
-                color = if (button.available) WHITE else DIM,
-                fontSize = style.buttonTextSp.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            ),
+            text = button.label,
+            style = TextStyle(color = color, fontSize = style.buttonTextSp.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+            maxLines = 1,
         )
+        if (button.detail.isNotEmpty()) {
+            Text(
+                text = button.detail,
+                style = TextStyle(color = color, fontSize = style.detailTextSp.sp, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
+        }
     }
 }

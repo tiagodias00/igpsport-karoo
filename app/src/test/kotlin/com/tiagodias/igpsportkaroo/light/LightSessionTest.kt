@@ -2,9 +2,11 @@ package com.tiagodias.igpsportkaroo.light
 
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
+import com.tiagodias.igpsportkaroo.protocol.Crc8
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
+import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -64,7 +66,37 @@ class LightSessionTest {
     // Captured from the real VS1200S: button press to MID.
     private val vs1200sButtonMid = Hex.decode("03 6A 02 FF 01 FF FF 02 FF FF FF FF FF FF FF FF FF FF FF DA")
 
+    // Captured from the real VS1200S (docs/vs1200s-findings.md): declares MID, HIGH, FLASH HI, FLASH LO, CUSTOM 1, all enabled.
+    private val vs1200sDeclared = Hex.decode(
+        "01 6A 01 FF 02 FF FF 00 26 0E 01 FF FF FF FF FF FF FF FF 30 " +
+            "08 6A 10 02 18 01 32 04 08 02 18 01 32 04 08 01 18 01 32 04 " +
+            "08 04 18 01 32 04 08 05 18 01 32 06 08 40 10 01 18 01",
+    )
+    // Captured from the real VS1200S: smart configs {5:0, 3:1 (AUTO_LIGHT on), 9:1, 4:1, 13:1, 15:1}.
+    private val vs1200sSmartConfigs = Hex.decode(
+        "01 6A 04 FF 02 FF FF 00 30 6C 01 FF FF FF FF FF FF FF FF BE 08 6A 10 02 18 04 4A 02 08 05 " +
+            "4A 04 08 03 10 01 4A 04 08 09 10 01 4A 08 08 04 10 01 1A 02 08 3C 4A 08 08 0D 10 01 1A 02 08 1E " +
+            "4A 04 08 0F 10 01",
+    )
+    // Captured from the real VS1200S: auto light switched the output off in daylight, then 240 min run time.
+    private val vs1200sOutputOff = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF FF FF FF FF FF FF FF FF 5B")
+    private val vs1200sRunTime240 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF F0 00 00 00 FF FF FF FF 38")
+    private val vs1200sAutoBrightness97 = Hex.decode("03 6B 07 FF 01 FF FF 61 FF FF FF FF FF FF FF FF FF FF FF 55")
+
+    /** A mode state frame like the light's own (only the header CRC is computed). */
+    private fun stateMode(mode: Int): ByteArray {
+        val frame = Hex.decode("03 6A 02 FF 01 FF FF 00 FF FF FF FF FF FF FF FF FF FF FF 00")
+        frame[7] = mode.toByte()
+        frame[19] = Crc8.maxim(frame, 0, 19).toByte()
+        return frame
+    }
+
     private fun hex(b: ByteArray) = Hex.encode(b)
+
+    private fun TestScope.report(link: FakeLink, vararg frames: ByteArray) {
+        frames.forEach { link.events.tryEmit(LinkEvent.Fragment(it)) }
+        runCurrent()
+    }
 
     private fun TestScope.connectedSession(link: FakeLink): LightSession {
         val session = LightSession(link, "AA:BB:CC:DD:EE:FF", backgroundScope, now = { testScheduler.currentTime })
@@ -86,6 +118,7 @@ class LightSessionTest {
                 hex(IgpsProtocol.readCurrentMode()),
                 hex(IgpsProtocol.readBattery()),
                 hex(IgpsProtocol.readRemainingTime()),
+                hex(IgpsProtocol.readSmartConfigs()),
             ),
             link.sent,
         )
@@ -325,6 +358,180 @@ class LightSessionTest {
         link.sent.clear()
         assertTrue(session.nextMode()) // enabled [1, 3, 17]; off -> first = 1
         assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
+    fun `smart configs and auto brightness are parsed into state`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sSmartConfigs, vs1200sAutoBrightness97)
+        assertEquals(mapOf(5 to 0, 3 to 1, 9 to 1, 4 to 1, 13 to 1, 15 to 1), session.state.value.smartConfigs)
+        assertTrue(session.state.value.autoLightOn)
+        assertEquals(97, session.state.value.autoBrightnessPercent)
+    }
+
+    @Test
+    fun `an output-off frame sets outputOff and a valid run-time frame clears it`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sOutputOff)
+        assertTrue(session.state.value.outputOff)
+        report(link, vs1200sRunTime240)
+        assertFalse(session.state.value.outputOff)
+        assertEquals(240, session.state.value.remainingMinutes)
+    }
+
+    @Test
+    fun `setSmartConfig writes, updates optimistically and reads back`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sSmartConfigs)
+        link.sent.clear()
+        assertTrue(session.setSmartConfig(SmartConfig.LUMEN_VARY, on = false))
+        assertEquals(
+            listOf(hex(IgpsProtocol.setSmartConfig(SmartConfig.LUMEN_VARY, SmartConfig.OFF)), hex(IgpsProtocol.readSmartConfigs())),
+            link.sent,
+        )
+        assertEquals(SmartConfig.OFF, session.state.value.smartConfigs[SmartConfig.LUMEN_VARY])
+    }
+
+    @Test
+    fun `solid cycles the steady levels when the light is already steady`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(2)) // steady levels [2, 1]; auto off (no configs reported)
+        link.sent.clear()
+        assertTrue(session.selectSolid())
+        assertEquals(1, session.state.value.mode)
+        assertTrue(session.selectSolid())
+        assertEquals(2, session.state.value.mode)
+        assertEquals(
+            listOf(
+                hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode()),
+                hex(IgpsProtocol.setMode(2)), hex(IgpsProtocol.readCurrentMode()),
+            ),
+            link.sent,
+        )
+    }
+
+    @Test
+    fun `solid from flash goes back to the last steady level`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(1), stateMode(5))
+        link.sent.clear()
+        assertTrue(session.selectSolid())
+        assertEquals(listOf(hex(IgpsProtocol.setMode(1)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
+    fun `solid without a steady mode yet selects the light's first steady level`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(5))
+        link.sent.clear()
+        assertTrue(session.selectSolid())
+        assertEquals(listOf(hex(IgpsProtocol.setMode(2)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+    }
+
+    @Test
+    fun `solid while powered off turns the current steady level back on`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(2))
+        session.selectMode(LightModes.OFF)
+        link.sent.clear()
+        assertTrue(session.selectSolid()) // off: no cycling, back to MID
+        assertEquals(listOf(hex(IgpsProtocol.setMode(2)), hex(IgpsProtocol.readCurrentMode())), link.sent)
+        assertFalse(session.state.value.poweredOff)
+    }
+
+    @Test
+    fun `solid while auto is on disables auto first`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1)) // AUTO_LIGHT on, HIGH
+        link.sent.clear()
+        assertTrue(session.selectSolid()) // auto on: no cycling, stays on HIGH but manual
+        assertEquals(
+            listOf(
+                hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_LIGHT, SmartConfig.OFF)),
+                hex(IgpsProtocol.readSmartConfigs()),
+                hex(IgpsProtocol.setMode(1)),
+                hex(IgpsProtocol.readCurrentMode()),
+            ),
+            link.sent,
+        )
+        assertFalse(session.state.value.autoLightOn)
+        assertEquals(1, session.state.value.mode)
+    }
+
+    @Test
+    fun `flash cycles the flash levels and returns to the last one`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectFlash()) // from steady: first flash level (none used yet)
+        assertEquals(4, session.state.value.mode)
+        assertTrue(session.selectFlash()) // already flashing: next level
+        assertEquals(5, session.state.value.mode)
+        assertTrue(session.selectSolid())
+        assertTrue(session.selectFlash()) // back to the last flash level
+        assertEquals(5, session.state.value.mode)
+        assertEquals(
+            listOf(4, 5, 1, 5).flatMap { listOf(hex(IgpsProtocol.setMode(it)), hex(IgpsProtocol.readCurrentMode())) },
+            link.sent,
+        )
+    }
+
+    @Test
+    fun `auto enables auto light`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectAuto())
+        assertEquals(
+            listOf(hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_LIGHT, SmartConfig.ON)), hex(IgpsProtocol.readSmartConfigs())),
+            link.sent,
+        )
+        assertTrue(session.state.value.autoLightOn)
+    }
+
+    @Test
+    fun `auto while powered off also turns the light on`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, stateMode(1), stateMode(5)) // last steady level: HIGH
+        session.selectMode(LightModes.OFF)
+        link.sent.clear()
+        assertTrue(session.selectAuto())
+        assertEquals(
+            listOf(
+                hex(IgpsProtocol.setSmartConfig(SmartConfig.AUTO_LIGHT, SmartConfig.ON)),
+                hex(IgpsProtocol.readSmartConfigs()),
+                hex(IgpsProtocol.setMode(1)),
+                hex(IgpsProtocol.readCurrentMode()),
+            ),
+            link.sent,
+        )
+        assertTrue(session.state.value.autoLightOn)
+        assertFalse(session.state.value.poweredOff)
+    }
+
+    @Test
+    fun `the light controls report failure when the link refuses`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1))
+        link.accepting = false
+        assertFalse(session.selectSolid())
+        assertFalse(session.selectFlash())
+        assertFalse(session.selectAuto())
+        assertFalse(session.setSmartConfig(SmartConfig.AUTO_LOW, on = false))
+        assertTrue(session.state.value.autoLightOn) // nothing was sent, so nothing changed
+        assertEquals(1, session.state.value.mode)
     }
 
     @Test
