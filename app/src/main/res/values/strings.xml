@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">iGPSPORT Light</string>
+    <string name="extension_name">iGPSPORT Light</string>
+    <string name="field_control_name">Light controls</string>
+    <string name="field_control_description">Tap a mode to switch your iGPSPORT light. Shows battery and run time.</string>
+    <string name="field_battery_name">Light battery</string>
+    <string name="field_battery_description">Battery level of your iGPSPORT light (%).</string>
+    <string name="action_next_mode">Light: next mode</string>
+    <string name="action_slot_1">Light: button 1 mode</string>
+    <string name="action_slot_2">Light: button 2 mode</string>
+    <string name="action_slot_3">Light: button 3 mode</string>
+    <string name="action_open_controls">Light: open controls</string>
+    <string name="action_light_off">Light: off</string>
+    <string name="perm_needed">iGPSPORT Light needs Bluetooth permission. Open the app to allow it.</string>
+    <string name="perm_granted">Bluetooth permission granted. Pair your light in Sensors → Add sensor.</string>
+    <string name="open_settings">Open</string>
+    <string name="settings_slots">Ride field buttons</string>
+    <string name="slot_label">Button %1$d</string>
+    <string name="settings_ride_start">When a ride starts</string>
+    <string name="ride_start_label">Set light to</string>
+    <string name="none">Don\'t change</string>
+    <string name="low_battery_alerts">Low battery alerts (20% and 10%)</string>
+    <string name="cc_shortcut">Control Center shortcut (experimental)</string>
+    <string name="open_controls">Open light controls</string>
+    <string name="control_title">Light controls</string>
+    <string name="low_battery_title">Light battery %1$d%%</string>
+    <string name="low_battery_detail">Your iGPSPORT light is running low.</string>
+    <string name="shortcut_message">iGPSPORT light connected</string>
+    <string name="shortcut_subtext">Tap for light controls</string>
+    <string name="shortcut_action">Controls</string>
+</resources>

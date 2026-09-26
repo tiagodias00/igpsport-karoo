@@ -18,3 +18,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "igpsport-karoo"
 include(":protocol")
+include(":app")
