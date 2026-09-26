@@ -27,6 +27,7 @@ import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 import com.tiagodias.igpsportkaroo.ui.FieldUi
 import com.tiagodias.igpsportkaroo.ui.SmartFeatures
 import com.tiagodias.igpsportkaroo.ui.buttonBackground
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -41,6 +42,7 @@ import timber.log.Timber
  */
 class MainActivity : Activity() {
     private val scope = MainScope()
+    private var refreshJob: Job? = null
     private lateinit var settings: Settings
 
     private lateinit var permissionStatus: TextView
@@ -87,13 +89,24 @@ class MainActivity : Activity() {
         val missing = Permissions.missing(this)
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQUEST_PERMISSIONS)
         updatePermissionStatus()
+    }
 
-        scope.launch {
+    /** Polls the light's state only while the page is visible. */
+    override fun onStart() {
+        super.onStart()
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
             while (isActive) {
                 render(LightHub.session?.state?.value ?: LightState())
                 delay(REFRESH_MS)
             }
         }
+    }
+
+    override fun onStop() {
+        refreshJob?.cancel()
+        refreshJob = null
+        super.onStop()
     }
 
     override fun onResume() {
