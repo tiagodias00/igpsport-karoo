@@ -668,7 +668,9 @@ class LightSessionTest {
         assertEquals(iterations, setModeOffCount)
     }
 
-    @Test
+    // Bounded so a future regression (e.g. a real deadlock, or another missing session.stop()) fails fast
+    // instead of hanging the whole test run, as an earlier version of this test did (see task-dimmed-report.md).
+    @Test(timeout = 10_000)
     fun `auto dimmed stays consistent across interleaved commands and reports`() = runBlocking {
         val link = FakeLink()
         val session = LightSession(link, "AA:BB:CC:DD:EE:FF", this)
