@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /** Turns link events into [LightState] and light commands into frames, for one paired light. */
 class LightSession(
@@ -32,6 +34,8 @@ class LightSession(
     private var job: Job? = null
     private val commandLock = Any()
     private var offCommandAt: Long? = null
+    private var reconnecting = false
+    private var lastReconnectAt: Long? = null
 
     fun start(): Unit = synchronized(commandLock) {
         if (job != null) return
@@ -41,6 +45,7 @@ class LightSession(
     fun stop(): Unit = synchronized(commandLock) {
         job?.cancel()
         job = null
+        reconnecting = false
         _state.value = LightState()
     }
 
@@ -48,15 +53,33 @@ class LightSession(
      * Forces an immediate reconnect while the light is not connected: drops the current link flow (and its
      * backoff) and collects a fresh one, which starts a new search right away. The last known state is kept.
      * No-op while connected or stopped. Serialized with [start]/[stop] on [commandLock].
+     *
+     * One reconnect in flight at a time: a call is ignored while the previous reconnect is still waiting for the
+     * old link's teardown (cancelling that wait would let a new link start before the teardown ran), and within
+     * [RECONNECT_MIN_INTERVAL_MS] of the last accepted call (each one starts a scan; Android throttles scans).
      */
     fun reconnectNow(): Unit = synchronized(commandLock) {
         val previous = job ?: return
         if (_state.value.connected) return
+        if (reconnecting) {
+            Timber.d("Reconnect ignored: the previous one is still pending")
+            return
+        }
+        val at = now()
+        lastReconnectAt?.let { last ->
+            if (at - last < RECONNECT_MIN_INTERVAL_MS) {
+                Timber.d("Reconnect ignored: last one was %d ms ago", at - last)
+                return
+            }
+        }
+        lastReconnectAt = at
+        reconnecting = true
         // Cancelled here, not in the new job, so a stop() before the new job runs still ends the old link.
         previous.cancel()
         job = scope.launch {
             // Wait for the old flow's teardown before connecting again, so it can't close the new connection.
-            previous.join()
+            if (!previous.isCompleted) previous.join()
+            synchronized(commandLock) { if (job === coroutineContext.job) reconnecting = false }
             runLink()
         }
     }
@@ -139,5 +162,6 @@ class LightSession(
 
     private companion object {
         const val OFF_SETTLE_MS = 3_000L
+        const val RECONNECT_MIN_INTERVAL_MS = 10_000L
     }
 }

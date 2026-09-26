@@ -5,16 +5,21 @@ import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,9 +33,18 @@ class LightSessionTest {
         val sent = mutableListOf<String>()
         var accepting = true
         var connectCalls = 0
+        /** Link flows currently collected (started and not yet torn down). */
+        var openFlows = 0
+        /** When set, a cancelled link flow's teardown waits for it (like a GATT close that hasn't run yet). */
+        var teardownGate: CompletableDeferred<Unit>? = null
         override fun connect(address: String): Flow<LinkEvent> {
             connectCalls++
             return events
+                .onStart { openFlows++ }
+                .onCompletion {
+                    teardownGate?.let { gate -> withContext(NonCancellable) { gate.await() } }
+                    openFlows--
+                }
         }
         override fun send(frame: ByteArray): Boolean {
             if (accepting) synchronized(sendLock) { sent += Hex.encode(frame) }
@@ -179,6 +193,62 @@ class LightSessionTest {
         session.reconnectNow() // stopped: nothing to do
         runCurrent()
         assertEquals(2, link.connectCalls)
+    }
+
+    @Test
+    fun `a second reconnect while one is pending is ignored`() = runTest {
+        val link = FakeLink()
+        var clock = 0L // manual clock, so only the pending reconnect (not the rate limit) can block the second tap
+        val session = LightSession(link, "AA:BB:CC:DD:EE:FF", backgroundScope, now = { clock })
+        session.start()
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+
+        val gate = CompletableDeferred<Unit>()
+        link.teardownGate = gate
+        session.reconnectNow()
+        runCurrent()
+        assertEquals(1, link.connectCalls) // waiting for the old link's teardown
+
+        clock += 20_000
+        session.reconnectNow() // still pending: must not start a link before the old one is torn down
+        runCurrent()
+        assertEquals(1, link.connectCalls)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(2, link.connectCalls)
+        assertEquals(1, link.openFlows)
+
+        clock += 20_000
+        session.reconnectNow() // the pending one has started: accepted again
+        runCurrent()
+        assertEquals(3, link.connectCalls)
+        assertEquals(1, link.openFlows)
+    }
+
+    @Test
+    fun `reconnects are rate limited`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        session.reconnectNow()
+        runCurrent()
+        assertEquals(2, link.connectCalls)
+
+        advanceTimeBy(5_000)
+        session.reconnectNow() // within 10 s of the last one: ignored
+        runCurrent()
+        assertEquals(2, link.connectCalls)
+
+        advanceTimeBy(6_000)
+        session.reconnectNow()
+        runCurrent()
+        assertEquals(3, link.connectCalls)
     }
 
     @Test
