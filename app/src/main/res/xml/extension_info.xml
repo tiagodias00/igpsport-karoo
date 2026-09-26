@@ -3,5 +3,11 @@
     displayName="@string/extension_name"
     icon="@drawable/ic_light"
     id="igpsport"
-    scansDevices="false">
+    scansDevices="true">
+    <DataType
+        typeId="light-battery"
+        displayName="@string/field_battery_name"
+        description="@string/field_battery_description"
+        icon="@drawable/ic_light"
+        graphical="false" />
 </ExtensionInfo>
