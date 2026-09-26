@@ -60,6 +60,24 @@ class FieldUiTest {
     }
 
     @Test
+    fun `compact labels and status when connected`() {
+        val vs1200sSlots = listOf(1, 5, 0)
+        val on = LightState(connected = true, mode = 1, batteryPercent = 78)
+        val ui = FieldUi.from(on, vs1200sSlots)
+        assertEquals(listOf("HI", "FL LO", "OFF"), ui.buttons.map { it.shortLabel })
+        assertEquals("78%", ui.statusShort)
+        assertEquals("78%", FieldUi.from(on.copy(poweredOff = true), vs1200sSlots).statusShort)
+        assertEquals("--", FieldUi.from(on.copy(batteryPercent = null), vs1200sSlots).statusShort)
+    }
+
+    @Test
+    fun `compact status offers reconnect while searching`() {
+        val ui = FieldUi.from(LightState(batteryPercent = 78), slots)
+        assertTrue(ui.reconnectable)
+        assertEquals("↻", ui.statusShort)
+    }
+
+    @Test
     fun `formats minutes`() {
         assertEquals("45m", FieldUi.formatMinutes(45))
         assertEquals("1h 0m", FieldUi.formatMinutes(60))

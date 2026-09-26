@@ -25,14 +25,14 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 
-private val ACTIVE = Color(0xFF2E7D32)
-private val IDLE = Color(0xFF37474F)
-private val UNAVAILABLE = Color(0xFF1C1C1C)
-private val SEARCHING = Color(0xFF5D4037)
-private val WHITE = ColorProvider(Color.White)
-private val DIM = ColorProvider(Color(0xFF8A8A8A))
+/** Sizes of the two-part field; [REGULAR] is the original "Light controls" look, [SLIM] the "(slim)" variant. */
+data class FieldStyle(val buttonTextSp: Float, val footerTextSp: Float, val footerHeightDp: Float, val gapDp: Float) {
+    companion object {
+        val REGULAR = FieldStyle(buttonTextSp = 18f, footerTextSp = 16f, footerHeightDp = 30f, gapDp = 2f)
+        val SLIM = FieldStyle(buttonTextSp = 14f, footerTextSp = 12f, footerHeightDp = 20f, gapDp = 1f)
+    }
+}
 
 /**
  * ┌──────────┬──────────┬──────────┐
@@ -42,32 +42,29 @@ private val DIM = ColorProvider(Color(0xFF8A8A8A))
  * └────────────────────────────────┘
  */
 @Composable
-fun LightField(ui: FieldUi, interactive: Boolean) {
-    Column(modifier = GlanceModifier.fillMaxSize().background(Color.Black).padding(2.dp)) {
+fun LightField(ui: FieldUi, interactive: Boolean, style: FieldStyle = FieldStyle.REGULAR) {
+    val gap = style.gapDp.dp
+    Column(modifier = GlanceModifier.fillMaxSize().background(Color.Black).padding(gap)) {
         Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
             ui.buttons.forEachIndexed { index, button ->
-                if (index > 0) Spacer(GlanceModifier.width(2.dp))
-                ModeButton(button, enabled = interactive && ui.connected)
+                if (index > 0) Spacer(GlanceModifier.width(gap))
+                ModeButton(button, enabled = interactive && ui.connected, style)
             }
         }
-        Spacer(GlanceModifier.height(2.dp))
-        var footer = GlanceModifier.fillMaxWidth().height(30.dp).background(if (ui.connected) IDLE else SEARCHING)
+        Spacer(GlanceModifier.height(gap))
+        var footer = GlanceModifier.fillMaxWidth().height(style.footerHeightDp.dp)
+            .background(if (ui.connected) IDLE else SEARCHING)
         // Never clickable in preview mode, same as the buttons (karoo-ext issue #48).
         if (interactive && ui.reconnectable) footer = footer.clickable(actionRunCallback<ReconnectAction>())
         Box(modifier = footer, contentAlignment = Alignment.Center) {
-            Text(ui.footer, style = TextStyle(color = WHITE, fontSize = 16.sp, textAlign = TextAlign.Center))
+            Text(ui.footer, style = TextStyle(color = WHITE, fontSize = style.footerTextSp.sp, textAlign = TextAlign.Center))
         }
     }
 }
 
 @Composable
-private fun RowScope.ModeButton(button: FieldUi.Button, enabled: Boolean) {
-    val background = when {
-        !button.available -> UNAVAILABLE
-        button.active -> ACTIVE
-        else -> IDLE
-    }
-    var modifier = GlanceModifier.defaultWeight().fillMaxHeight().background(background)
+private fun RowScope.ModeButton(button: FieldUi.Button, enabled: Boolean, style: FieldStyle) {
+    var modifier = GlanceModifier.defaultWeight().fillMaxHeight().background(buttonBackground(button))
     // No click handler in preview mode, or it would hijack the Profiles editor (karoo-ext issue #48).
     if (enabled && button.available) {
         modifier = modifier.clickable(
@@ -79,7 +76,7 @@ private fun RowScope.ModeButton(button: FieldUi.Button, enabled: Boolean) {
             text = if (button.active) "${button.label} ●" else button.label,
             style = TextStyle(
                 color = if (button.available) WHITE else DIM,
-                fontSize = 18.sp,
+                fontSize = style.buttonTextSp.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             ),

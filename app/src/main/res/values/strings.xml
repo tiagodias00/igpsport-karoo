@@ -3,6 +3,10 @@
     <string name="extension_name">iGPSPORT Light</string>
     <string name="field_control_name">Light controls</string>
     <string name="field_control_description">Tap a mode to switch your iGPSPORT light. Shows battery and run time.</string>
+    <string name="field_control_slim_name">Light controls (slim)</string>
+    <string name="field_control_slim_description">Two-line light controls with smaller text.</string>
+    <string name="field_control_compact_name">Light controls (compact)</string>
+    <string name="field_control_compact_description">One-row light controls with battery. Tap a mode to switch.</string>
     <string name="field_battery_name">Light battery</string>
     <string name="field_battery_description">Battery level of your iGPSPORT light (%).</string>
     <string name="action_next_mode">Light: next mode</string>

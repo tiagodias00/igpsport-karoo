@@ -9,7 +9,16 @@ object LightModes {
         16 to "BOOST", 17 to "SOS",
     )
 
+    private val SHORT_LABELS = mapOf(
+        0 to "OFF", 1 to "HI", 2 to "MID", 3 to "LO", 4 to "FL HI", 5 to "FL LO", 6 to "PULSE",
+        7 to "HB HI", 8 to "HB MID", 9 to "HB LO", 10 to "LB HI", 11 to "LB MID", 12 to "LB LO",
+        16 to "BOOST", 17 to "SOS",
+    )
+
     fun label(mode: Int): String = LABELS[mode] ?: if (mode in 64..75) "CUSTOM ${mode - 63}" else "MODE $mode"
+
+    /** A label short enough for a one-row field. */
+    fun shortLabel(mode: Int): String = SHORT_LABELS[mode] ?: if (mode in 64..75) "C${mode - 63}" else "M$mode"
 
     /** The mode after [current] in [enabled], wrapping around. Off is never part of the cycle. */
     fun next(current: Int?, enabled: List<Int>): Int? {

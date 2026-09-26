@@ -15,6 +15,19 @@ class LightModesTest {
     }
 
     @Test
+    fun `short labels known, custom and unknown modes`() {
+        assertEquals("OFF", LightModes.shortLabel(0))
+        assertEquals("HI", LightModes.shortLabel(1))
+        assertEquals("FL LO", LightModes.shortLabel(5))
+        assertEquals("HB MID", LightModes.shortLabel(8))
+        assertEquals("SOS", LightModes.shortLabel(17))
+        assertEquals("C1", LightModes.shortLabel(64))
+        assertEquals("C2", LightModes.shortLabel(65))
+        assertEquals("C12", LightModes.shortLabel(75))
+        assertEquals("M99", LightModes.shortLabel(99))
+    }
+
+    @Test
     fun `next cycles through enabled modes and wraps`() {
         assertEquals(2, LightModes.next(1, listOf(1, 2, 3)))
         assertEquals(1, LightModes.next(3, listOf(1, 2, 3)))

@@ -3,9 +3,12 @@ package com.tiagodias.igpsportkaroo.ui
 import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.protocol.LightState
 
-/** Pure view model of the ride field: three mode buttons + a battery/run-time footer. */
-data class FieldUi(val buttons: List<Button>, val footer: String, val connected: Boolean) {
-    data class Button(val slot: Int, val label: String, val active: Boolean, val available: Boolean)
+/**
+ * Pure view model of the ride fields: three mode buttons + a battery/run-time footer, plus the compact field's
+ * one-cell status ([statusShort]) and [Button.shortLabel]s.
+ */
+data class FieldUi(val buttons: List<Button>, val footer: String, val connected: Boolean, val statusShort: String) {
+    data class Button(val slot: Int, val label: String, val shortLabel: String, val active: Boolean, val available: Boolean)
 
     /** While the light is not connected, tapping the footer forces an immediate reconnect. */
     val reconnectable: Boolean get() = !connected
@@ -18,6 +21,7 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
                 Button(
                     slot = slot,
                     label = LightModes.label(mode),
+                    shortLabel = LightModes.shortLabel(mode),
                     // The light keeps reporting its remembered mode while off, so "off" comes from state.poweredOff.
                     active = state.connected && if (isOff) state.poweredOff else !state.poweredOff && state.mode == mode,
                     available = isOff || !known || mode in state.declaredModes,
@@ -33,7 +37,9 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
                     state.remainingMinutes?.let { "${formatMinutes(it)} left" },
                 ).joinToString("  ·  ").ifEmpty { "Connected" }
             }
-            return FieldUi(buttons, footer, state.connected)
+            // Compact status cell: battery while connected (the OFF button already shows "off"), a retry glyph otherwise.
+            val statusShort = if (state.connected) state.batteryPercent?.let { "$it%" } ?: "--" else "↻"
+            return FieldUi(buttons, footer, state.connected, statusShort)
         }
 
         fun formatMinutes(minutes: Int): String =
