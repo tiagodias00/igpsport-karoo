@@ -86,7 +86,7 @@ jobs:
             --argjson c "$CODE" \
             --arg base "$BASE" \
             '{
-              label: "iGPSPORT Light",
+              label: "Light Control for iGPSPORT",
               packageName: "com.tiagodias.igpsportkaroo",
               latestApkUrl: ($base + "/igpsport-karoo.apk"),
               latestVersion: $v,

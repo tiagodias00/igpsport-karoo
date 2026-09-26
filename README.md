@@ -1,4 +1,6 @@
-# iGPSPORT Light for Hammerhead Karoo
+# Light Control for iGPSPORT
+
+A Hammerhead Karoo extension.
 
 Control an iGPSPORT VS-series bike light (tested on the VS1200S) from a Hammerhead Karoo 3: switch
 modes from a ride-screen field or the app page, see battery and run time, and automate the light
@@ -55,7 +57,7 @@ This works once the repo is public.
 
 ## First setup
 
-1. Open "iGPSPORT Light" on the Karoo and allow Nearby devices.
+1. Open "Light Control for iGPSPORT" on the Karoo and allow Nearby devices.
 2. Close the iGPSPORT phone app (or turn the phone's Bluetooth off) — the light only accepts one
    connection at a time.
 3. Go to Sensors → Add sensor → VS1200S.
