@@ -87,10 +87,13 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
 
         private fun auto(state: LightState): Button {
             val brightness = state.autoBrightnessPercent?.let { "$it%" }
+            // Blank while auto is off: its brightness / daylight reports would be stale.
+            val on = state.autoLightOn
             return Button(
                 kind = Kind.AUTO,
                 label = "AUTO",
                 detail = when {
+                    !on -> ""
                     state.outputOff -> "off (day)"
                     brightness != null -> brightness
                     else -> state.mode?.let(LightModes::label).orEmpty()
@@ -99,6 +102,7 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
                 available = state.smartConfigs.isEmpty() || SmartConfig.AUTO_LIGHT in state.smartConfigs,
                 shortLabel = "AUTO",
                 shortDetail = when {
+                    !on -> ""
                     state.outputOff -> "day"
                     brightness != null -> brightness
                     else -> state.mode?.let(LightModes::shortLabel).orEmpty()

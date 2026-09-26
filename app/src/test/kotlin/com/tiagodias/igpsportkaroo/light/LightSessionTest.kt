@@ -396,6 +396,18 @@ class LightSessionTest {
     }
 
     @Test
+    fun `turning auto light off clears output off`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sSmartConfigs, vs1200sOutputOff)
+        assertTrue(session.state.value.outputOff)
+        assertTrue(session.setSmartConfig(SmartConfig.LUMEN_VARY, on = false)) // another config: unchanged
+        assertTrue(session.state.value.outputOff)
+        assertTrue(session.setSmartConfig(SmartConfig.AUTO_LIGHT, on = false))
+        assertFalse(session.state.value.outputOff)
+    }
+
+    @Test
     fun `solid cycles the steady levels when the light is already steady`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)

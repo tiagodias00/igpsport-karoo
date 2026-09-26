@@ -156,7 +156,11 @@ class LightSession(
     fun setSmartConfig(id: Int, on: Boolean): Boolean = synchronized(commandLock) {
         val status = if (on) SmartConfig.ON else SmartConfig.OFF
         if (!link.send(IgpsProtocol.setSmartConfig(id, status))) return false
-        _state.update { it.copy(smartConfigs = it.smartConfigs + (id to status)) }
+        // Without auto light the output is never switched off for daylight, so a stale "output off" goes too.
+        val clearsOutputOff = id == SmartConfig.AUTO_LIGHT && !on
+        _state.update {
+            it.copy(smartConfigs = it.smartConfigs + (id to status), outputOff = it.outputOff && !clearsOutputOff)
+        }
         return link.send(IgpsProtocol.readSmartConfigs())
     }
 
@@ -189,11 +193,8 @@ class LightSession(
         val cycling = !s.poweredOff && !s.autoLightOn && s.mode in group
         val next = if (cycling) LightModes.next(s.mode, levels(s.enabledModes)) else null
         val target = next ?: current(s) ?: return false
-        if (s.autoLightOn) {
-            if (!setSmartConfig(SmartConfig.AUTO_LIGHT, on = false)) return false
-            // Manual modes always light, so a daylight "output off" no longer applies.
-            _state.update { it.copy(outputOff = false) }
-        }
+        // Switching auto light off also clears a daylight "output off": manual modes always light.
+        if (s.autoLightOn && !setSmartConfig(SmartConfig.AUTO_LIGHT, on = false)) return false
         return selectMode(target)
     }
 

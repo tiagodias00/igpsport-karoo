@@ -42,7 +42,7 @@ class FieldUiTest {
         val ui = FieldUi.from(high)
         assertFalse(ui.reconnectable)
         assertEquals(listOf(true, false, false, false), ui.buttons.map { it.active })
-        assertEquals(listOf("HIGH", "FL HI", "HIGH", ""), ui.buttons.map { it.detail })
+        assertEquals(listOf("HIGH", "FL HI", "", ""), ui.buttons.map { it.detail })
         assertEquals("78%  ·  3h 20m left", ui.footer)
     }
 
@@ -118,6 +118,14 @@ class FieldUiTest {
     }
 
     @Test
+    fun `auto detail is blank while auto is off`() {
+        val stale = FieldUi.from(high.copy(outputOff = true, autoBrightnessPercent = 95)).button(Kind.AUTO)
+        assertEquals("", stale.detail)
+        assertEquals("", stale.shortDetail)
+        assertEquals("AUTO", stale.compactText(maxChars = 8))
+    }
+
+    @Test
     fun `footer says when auto light has switched the output off`() {
         assertEquals("Auto off (daylight)  ·  78%", FieldUi.from(autoOn.copy(outputOff = true)).footer)
         assertEquals("Auto off (daylight)", FieldUi.from(autoOn.copy(outputOff = true, batteryPercent = null)).footer)
@@ -132,7 +140,7 @@ class FieldUiTest {
 
     @Test
     fun `compact labels include the detail when it fits`() {
-        val ui = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95, smartConfigs = vs1200sConfigs).apply(LightUpdate(mode = 5)))
+        val ui = FieldUi.from(autoOn.copy(autoBrightnessPercent = 95).apply(LightUpdate(mode = 5)))
         assertEquals(listOf("SOL", "FLS", "AUTO", "OFF"), ui.buttons.map { it.shortLabel })
         assertEquals(listOf("HI", "LO", "95%", ""), ui.buttons.map { it.shortDetail })
         assertEquals(listOf("SOL HI", "FLS LO", "AUTO 95%", "OFF"), ui.buttons.map { it.compactText(maxChars = 8) })
