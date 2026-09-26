@@ -96,13 +96,17 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         session.start()
         val batteryTypeId = DataType.dataTypeId(extension, LightBatteryDataType.TYPE_ID)
         val job = scope.launch {
-            var lastConnected: Boolean? = null
+            var everConnected = false
+            var lastReportedConnected: Boolean? = null
             var lastBattery: Int? = null
             while (isActive) {
                 val s = session.state.value
-                if (s.connected != lastConnected) {
-                    emitter.onNext(OnConnectionStatus(if (s.connected) ConnectionStatus.CONNECTED else ConnectionStatus.SEARCHING))
-                    lastConnected = s.connected
+                if (s.connected) everConnected = true
+                // Karoo fails a device after 120s SEARCHING (no auto-retry) but the VS1200S motion-sleeps longer than that, so once connected we keep reporting CONNECTED; GattLightLink reconnects on its own underneath.
+                val reportedConnected = s.connected || everConnected
+                if (reportedConnected != lastReportedConnected) {
+                    emitter.onNext(OnConnectionStatus(if (reportedConnected) ConnectionStatus.CONNECTED else ConnectionStatus.SEARCHING))
+                    lastReportedConnected = reportedConnected
                 }
                 s.batteryPercent?.let { pct ->
                     if (pct != lastBattery) {
