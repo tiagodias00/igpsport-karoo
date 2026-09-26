@@ -118,6 +118,12 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
+    /** Reopened while alive (singleTask): the editor above is already closed, and [onResume] sets [onScreen]. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         onScreen = true

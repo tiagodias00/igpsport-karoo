@@ -71,6 +71,12 @@ class CustomModesActivity : Activity() {
         status = pageText(size = 16f).apply { setText(R.string.custom_searching) }.also(content::addView)
         custom = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(content::addView)
         setContentView(ScrollView(this).apply { addView(content) })
+        customSlot = savedInstanceState?.getInt(KEY_SLOT, -1)?.takeIf { it >= 0 }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        customSlot?.let { outState.putInt(KEY_SLOT, it) }
     }
 
     /** Polls the light's state only while the page is visible, like the app page. */
@@ -104,15 +110,19 @@ class CustomModesActivity : Activity() {
         // Snapshot before any edit control exists, so the first config kept is the one read from the light (D3).
         state.customModes.values.forEach(settings::rememberCustomOriginal)
         val editor = CustomEditor.from(state, customSlot, customSlot?.let(settings::customOriginal))
-        customSlot = editor.slot
-        // While searching with no slot known yet, the status line says so instead of "no custom modes".
-        val unknown = editor.slot == null && !state.connected
+        // Kept while no slot is known (a state reset), so the rider's choice survives a reconnect.
+        editor.slot?.let { customSlot = it }
+        // Until the light has said which modes it has, the status line (or nothing) shows, not "no custom modes".
+        val unknown = editor.slot == null && (!state.connected || state.declaredModes.isEmpty())
         val shape = listOf(unknown, editor.slots, editor.slot, editor.reading, editor.patterns.map { it.subtype }, editor.sliders.map { it.key })
         if (shape != renderedShape) {
             renderedShape = shape
             build(editor, unknown)
         }
         slotSpinner?.isEnabled = state.connected
+        // A disabled SeekBar drops the rest of the gesture (onStopTrackingTouch never runs): let go of the drag, so
+        // the slider shows the light's value again once it reconnects.
+        if (!state.connected) dragging = null
         editor.patterns.forEach { p ->
             patternButtons[p.subtype]?.apply {
                 isChecked = p.selected
@@ -132,11 +142,12 @@ class CustomModesActivity : Activity() {
     }
 
     private fun build(editor: CustomEditor, unknown: Boolean) {
-        custom.removeAllViews()
+        // Forget the old controls first: removing a SeekBar mid-drag cancels its gesture, and that must not write.
         seekBars.clear()
         patternButtons.clear()
         slotSpinner = null
         dragging = null
+        custom.removeAllViews()
         val slot = editor.slot
         if (slot == null) {
             if (!unknown) custom.addView(pageText(size = 14f).apply { setText(R.string.custom_none) })
@@ -153,7 +164,7 @@ class CustomModesActivity : Activity() {
                         val mode = editor.slots[position].mode
                         if (mode == customSlot) return
                         customSlot = mode
-                        renderedState = null // redraw for the new slot
+                        redraw()
                     }
 
                     override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -186,17 +197,26 @@ class CustomModesActivity : Activity() {
                 min = s.range.first
                 max = s.range.last
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    /** Where the thumb was when the touch began: a touch that doesn't move it writes nothing (D4). */
+                    private var startProgress = 0
+
                     override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
                         if (fromUser) value.text = "${s.label}: $progress${s.unit}"
                     }
 
                     override fun onStartTrackingTouch(bar: SeekBar) {
                         dragging = s.key
+                        startProgress = bar.progress
                     }
 
                     override fun onStopTrackingTouch(bar: SeekBar) {
+                        // A gesture cancelled by a rebuild (this bar is gone) writes nothing; nor does one released by a
+                        // disconnect, which only snaps the bar back to the light's value.
+                        if (seekBars[s.key]?.first !== bar) return
+                        if (dragging != s.key) return redraw()
                         dragging = null
-                        send { cfg -> CustomEditor.changeFor(cfg, s.key, bar.progress) }
+                        val moved = bar.progress != startProgress
+                        send { cfg -> CustomEditor.changeFor(cfg, s.key, bar.progress).takeIf { moved && cfg.applied(it) != cfg } }
                     }
                 })
             }
@@ -225,7 +245,7 @@ class CustomModesActivity : Activity() {
                 val original = settings.customOriginal(slot) ?: return@setOnClickListener
                 val sent = LightHub.session?.restoreCustomMode(original) ?: false
                 Timber.i("Custom modes page: restore custom %d (sent=%b)", slot, sent)
-                if (!sent) renderedState = null
+                if (!sent) redraw()
             }
         }
         row.addView(restore, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -241,10 +261,20 @@ class CustomModesActivity : Activity() {
         val sent = change != null && session != null && session.changeCustomMode(slot, change)
         Timber.i("Custom modes page: custom %d %s (sent=%b)", slot, change, sent)
         // Not sent (or nothing to send): the state won't change, so force a redraw to put the control back.
-        if (!sent) renderedState = null
+        if (!sent) redraw()
+    }
+
+    /**
+     * Redraws from the session's state even if it hasn't changed: posted, so a control is never rebuilt inside its
+     * own callback, but without waiting for the next tick.
+     */
+    private fun redraw() {
+        renderedState = null
+        custom.post { if (refreshJob != null) render(LightHub.session?.state?.value ?: LightState()) }
     }
 
     companion object {
         private const val REFRESH_MS = 500L
+        private const val KEY_SLOT = "custom_slot"
     }
 }

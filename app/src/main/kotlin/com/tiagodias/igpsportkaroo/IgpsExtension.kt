@@ -209,7 +209,11 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
      */
     private fun openControls() {
         val started = runCatching {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    // Back to the controls even if the editor was left open above them (MainActivity is also singleTask).
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
         }
         Timber.i("Bonus action %s: startActivity %s", ACTION_OPEN_CONTROLS, if (started.isSuccess) "requested" else "failed: ${started.exceptionOrNull()}")
         scope.launch {
