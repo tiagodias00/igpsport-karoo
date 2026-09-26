@@ -42,4 +42,13 @@
     <string name="about_author">Made by Tiago Dias — github.com/tiagodias00</string>
     <string name="about_protocol">Protocol research: cparfait/Bike-Light-Control (MIT)</string>
     <string name="about_disclaimer">Not affiliated with or endorsed by iGPSPORT.</string>
+    <string name="customise_modes">Customise light modes</string>
+    <string name="custom_title">Custom light modes</string>
+    <string name="custom_back">Back</string>
+    <string name="custom_searching">Searching for light…</string>
+    <string name="custom_none">Your light has no custom modes</string>
+    <string name="custom_reading">Reading the light…</string>
+    <string name="custom_note">Changes are stored in the light as soon as you release a slider or pick a pattern.</string>
+    <string name="custom_preview">Show on light</string>
+    <string name="custom_restore">Restore original</string>
 </resources>

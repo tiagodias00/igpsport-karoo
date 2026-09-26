@@ -95,4 +95,13 @@ jobs:
               description: "Control iGPSPORT VS-series bike lights from your Karoo",
               iconUrl: ($base + "/icon.png")
             }' > manifest.json
-          gh release create "$GITHUB_REF_NAME" igpsport-karoo.apk manifest.json icon.png --generate-notes
+          # Release notes: this version's section of CHANGELOG.md (GitHub appends its "Full Changelog" link).
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [[ ! -s notes.md ]]; then
+            echo "::warning::No CHANGELOG.md section for $VERSION; using generated notes only"
+          fi
+          gh release create "$GITHUB_REF_NAME" igpsport-karoo.apk manifest.json icon.png             --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes

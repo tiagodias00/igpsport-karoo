@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -21,6 +20,7 @@ import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
 import com.tiagodias.igpsportkaroo.automation.RideStart
 import com.tiagodias.igpsportkaroo.light.LightHub
+import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
 import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
@@ -53,6 +53,8 @@ class MainActivity : Activity() {
     private lateinit var retry: Button
     private lateinit var features: LinearLayout
     private val featureSwitches = mutableMapOf<Int, Switch>()
+    private val rideStartChoices = RideStart.choices(Settings.CHOOSABLE_MODES)
+    private lateinit var rideStartLabels: ArrayAdapter<String>
 
     /** What is on screen: views are only updated when the state changes, the switch list when the features do. */
     private var renderedState: LightState? = null
@@ -61,10 +63,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
+        val content = pageColumn()
         permissionStatus = text(size = 14f).also(content::addView)
         headline = text(size = 26f, bold = true).also(content::addView)
         footer = text(size = 16f).also(content::addView)
@@ -78,6 +77,16 @@ class MainActivity : Activity() {
         content.addView(section(R.string.section_features))
         features = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(content::addView)
 
+        content.addView(
+            Button(this).apply {
+                setText(R.string.customise_modes)
+                textSize = 18f
+                isAllCaps = false
+                setOnClickListener { startActivity(Intent(this@MainActivity, CustomModesActivity::class.java)) }
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) },
+        )
+
         content.addView(section(R.string.section_ride))
         addRideSettings(content)
 
@@ -86,9 +95,13 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(content) })
 
+        requestMissingPermissions()
+        updatePermissionStatus()
+    }
+
+    private fun requestMissingPermissions() {
         val missing = Permissions.missing(this)
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQUEST_PERMISSIONS)
-        updatePermissionStatus()
     }
 
     /** Polls the light's state only while the page is visible. */
@@ -109,9 +122,21 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
+    /**
+     * Reopened while alive (singleTask): the editor above is already closed, and [onResume] sets [onScreen]. The
+     * Karoo's permission notification lands here too, so ask again for what is still missing, as a fresh start would.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestMissingPermissions()
+    }
+
     override fun onResume() {
         super.onResume()
         onScreen = true
+        // Not a prompt: onResume also follows the permission dialog, and asking again there would loop on a denial.
+        updatePermissionStatus()
     }
 
     override fun onPause() {
@@ -165,19 +190,13 @@ class MainActivity : Activity() {
 
     private fun addRideSettings(content: LinearLayout) {
         content.addView(text(size = 16f).apply { setText(R.string.settings_ride_start) })
-        val choices = RideStart.choices(Settings.CHOOSABLE_MODES)
-        val labels = choices.map {
-            when (it) {
-                RideStart.None -> getString(R.string.none)
-                RideStart.Auto -> getString(R.string.ride_start_auto)
-                is RideStart.Mode -> LightModes.label(it.mode)
-            }
+        val choices = rideStartChoices
+        rideStartLabels = ArrayAdapter(this, android.R.layout.simple_spinner_item, rideStartLabels(emptyMap()).toMutableList()).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
         content.addView(
             Spinner(this).apply {
-                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, labels).apply {
-                    setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                }
+                adapter = rideStartLabels
                 setSelection(choices.indexOf(settings.rideStart).coerceAtLeast(0), false)
                 onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                     override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -191,6 +210,26 @@ class MainActivity : Activity() {
         )
         content.addView(settingSwitch(R.string.off_at_ride_end, settings.offAtRideEnd) { settings.offAtRideEnd = it })
         content.addView(settingSwitch(R.string.low_battery_alerts, settings.lowBatteryAlerts) { settings.lowBatteryAlerts = it })
+    }
+
+    /** The ride-start choices' labels; an edited custom slot says what it now does ("C1 30%") instead of "LOW". */
+    private fun rideStartLabels(customs: Map<Int, CustomModeConfig>): List<String> = rideStartChoices.map {
+        when (it) {
+            RideStart.None -> getString(R.string.none)
+            RideStart.Auto -> getString(R.string.ride_start_auto)
+            is RideStart.Mode -> LightModes.label(it.mode, customs)
+        }
+    }
+
+    /** Relabels the ride-start choices once a custom slot's config is known; the last known labels stay otherwise. */
+    private fun renderRideStartLabels(state: LightState) {
+        if (state.customModes.isEmpty()) return
+        val labels = rideStartLabels(state.customModes)
+        if ((0 until rideStartLabels.count).map(rideStartLabels::getItem) == labels) return
+        rideStartLabels.setNotifyOnChange(false)
+        rideStartLabels.clear()
+        rideStartLabels.addAll(labels)
+        rideStartLabels.notifyDataSetChanged()
     }
 
     /** Small, dim credits at the bottom of the app page: version, author (tappable), protocol research, disclaimer. */
@@ -235,6 +274,7 @@ class MainActivity : Activity() {
         }
         retry.visibility = if (ui.reconnectable) View.VISIBLE else View.GONE
         renderFeatures(state)
+        renderRideStartLabels(state)
     }
 
     private fun renderFeatures(state: LightState) {
@@ -275,18 +315,9 @@ class MainActivity : Activity() {
         setOnCheckedChangeListener { _, on -> onChange(on) }
     }
 
-    private fun section(title: Int) = text(size = 20f, bold = true).apply {
-        setText(title)
-        setPadding(0, dp(24), 0, dp(4))
-    }
+    private fun section(title: Int) = pageSection(title)
 
-    private fun text(size: Float, bold: Boolean = false) = TextView(this).apply {
-        textSize = size
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun text(size: Float, bold: Boolean = false) = pageText(size, bold)
 
     companion object {
         /** True while the app page is resumed: the extension checks it after asking Android to open the page. */

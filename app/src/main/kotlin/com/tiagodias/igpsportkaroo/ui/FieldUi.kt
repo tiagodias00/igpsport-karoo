@@ -1,6 +1,5 @@
 package com.tiagodias.igpsportkaroo.ui
 
-import com.tiagodias.igpsportkaroo.protocol.LightModes
 import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 
@@ -74,22 +73,22 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
             return Button(
                 kind = Kind.SOLID,
                 label = "SOLID",
-                detail = level?.let(LightModes::label).orEmpty(),
-                active = manual(state) && state.mode in LightModes.STEADY,
-                available = hasLevels(state, LightState::steadyLevels),
+                detail = level?.let(state::labelOf).orEmpty(),
+                active = manual(state) && state.isSteady(state.mode),
+                available = hasLevels(state) { it.steadyLevels },
                 shortLabel = "SOL",
-                shortDetail = level?.let(LightModes::shortLabel).orEmpty(),
+                shortDetail = level?.let(state::shortLabelOf).orEmpty(),
             )
         }
 
         private fun flash(state: LightState): Button {
-            val level = state.flashLevel?.let(LightModes::shortLabel)
+            val level = state.flashLevel?.let(state::shortLabelOf)
             return Button(
                 kind = Kind.FLASH,
                 label = "FLASH",
                 detail = level.orEmpty(),
-                active = manual(state) && state.mode in LightModes.FLASHING,
-                available = hasLevels(state, LightState::flashLevels),
+                active = manual(state) && state.isFlashing(state.mode),
+                available = hasLevels(state) { it.flashLevels },
                 shortLabel = "FLS",
                 shortDetail = level?.removePrefix("FL ").orEmpty(),
             )
@@ -104,8 +103,8 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
         private fun auto(state: LightState): Button {
             val on = state.autoLightOn
             val mode = state.mode
-            val label = mode?.let(LightModes::label)
-            val shortLabel = mode?.let(LightModes::shortLabel)
+            val label = mode?.let(state::labelOf)
+            val shortLabel = mode?.let(state::shortLabelOf)
             return Button(
                 kind = Kind.AUTO,
                 label = "AUTO",

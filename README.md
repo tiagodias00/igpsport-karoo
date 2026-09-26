@@ -1,5 +1,10 @@
 # Light Control for iGPSPORT
 
+[![Latest release](https://img.shields.io/github/v/release/tiagodias00/igpsport-karoo)](https://github.com/tiagodias00/igpsport-karoo/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/tiagodias00/igpsport-karoo/total)](https://github.com/tiagodias00/igpsport-karoo/releases)
+[![Build](https://github.com/tiagodias00/igpsport-karoo/actions/workflows/build.yml/badge.svg)](https://github.com/tiagodias00/igpsport-karoo/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A Hammerhead Karoo extension.
 
 Control an iGPSPORT VS-series bike light (tested on the VS1200S) from a Hammerhead Karoo 3: switch
@@ -26,6 +31,10 @@ around your ride.
   - Auto sleep
   - Auto dim when stopped
   - Low-battery saving
+- **A custom-mode editor** (app page → Customise light modes): set the light's custom mode to
+  steady or flash, its brightness, and the flash cycle and on-time. Changes apply to the light
+  right away, and "Restore original" puts back what it had before. The ride field shows the
+  custom mode as e.g. `C1 17%` or `C1 FLASH`.
 - **Hardware / bonus button actions**, mappable in Settings → Controls: next mode, solid (next
   level), flash (next level), auto, light off, open controls.
 - **A mode to set when a ride starts** — pick a fixed mode, AUTO, or "don't change" — and an
@@ -65,6 +74,8 @@ This works once the repo is public.
 4. Add the "Light controls" field (regular, slim or compact) to a ride page.
 
 ## Updating
+
+What changed in each version: see the [changelog](CHANGELOG.md).
 
 Long-press the app in the Karoo's extension list → Update. This uses the release's
 `manifest.json`.

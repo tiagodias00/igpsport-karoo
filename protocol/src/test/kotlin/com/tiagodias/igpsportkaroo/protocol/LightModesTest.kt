@@ -1,6 +1,7 @@
 package com.tiagodias.igpsportkaroo.protocol
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,7 +12,7 @@ class LightModesTest {
         assertEquals("HIGH", LightModes.label(1))
         assertEquals("FLASH HI", LightModes.label(4))
         assertEquals("SOS", LightModes.label(17))
-        assertEquals("LOW", LightModes.label(64)) // CUSTOM 1 is the VS1200S's low steady level
+        assertEquals("LOW", LightModes.label(64)) // CUSTOM 1 ships as the VS1200S's low steady level; unknown config
         assertEquals("CUSTOM 2", LightModes.label(65))
         assertEquals("MODE 99", LightModes.label(99))
     }
@@ -64,9 +65,55 @@ class LightModesTest {
 
     @Test
     fun `mode groups`() {
-        assertTrue((listOf(1, 2, 3, 7, 8, 9, 10, 11, 12, 16) + (64..75)).all { it in LightModes.STEADY })
-        assertTrue(listOf(4, 5, 6, 17).all { it in LightModes.FLASHING })
-        assertTrue(listOf(0, 13, 63, 76).none { it in LightModes.STEADY || it in LightModes.FLASHING })
-        assertTrue((64..75).none { it in LightModes.FLASHING })
+        // Without configs, custom slots count as steady.
+        assertTrue((listOf(1, 2, 3, 7, 8, 9, 10, 11, 12, 16) + (64..75)).all { LightModes.isSteady(it) })
+        assertTrue(listOf(4, 5, 6, 17).all { LightModes.isFlashing(it) })
+        assertTrue(listOf(0, 13, 63, 76).none { LightModes.isSteady(it) || LightModes.isFlashing(it) })
+        assertTrue((64..75).none { LightModes.isFlashing(it) })
+    }
+
+    private val steadyC1 = CustomModeConfig(
+        64, CustomMode.STEADY,
+        listOf(
+            CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30))),
+            CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 2, 30),
+            CustomPattern(CustomMode.BREATH, listOf(CustomLight(CustomMode.MAIN, 60))),
+        ),
+    )
+    private val flashC1 = steadyC1.copy(selected = CustomMode.FLASH)
+
+    @Test
+    fun `a custom mode is steady until it is known to blink`() {
+        assertTrue(LightModes.isSteady(64))
+        assertTrue(LightModes.isSteady(64, mapOf(64 to steadyC1)))
+        assertFalse(LightModes.isSteady(64, mapOf(64 to flashC1)))
+        assertTrue(LightModes.isFlashing(64, mapOf(64 to flashC1)))
+        assertFalse(LightModes.isFlashing(64))
+        assertTrue(LightModes.isSteady(1, mapOf(64 to flashC1)))
+        assertTrue(LightModes.isFlashing(4))
+        assertFalse(LightModes.isSteady(0) || LightModes.isFlashing(0))
+    }
+
+    @Test
+    fun `a flashing custom mode moves from the steady levels to the flash levels`() {
+        val vs1200s = listOf(2, 1, 4, 5, 64)
+        assertEquals(listOf(1, 2, 64), LightModes.steadyLevels(vs1200s, mapOf(64 to steadyC1)))
+        assertEquals(listOf(1, 2), LightModes.steadyLevels(vs1200s, mapOf(64 to flashC1)))
+        assertEquals(listOf(4, 5, 64), LightModes.flashLevels(vs1200s, mapOf(64 to flashC1)))
+        assertEquals(listOf(4, 5), LightModes.flashLevels(vs1200s, mapOf(64 to steadyC1)))
+    }
+
+    @Test
+    fun `labels a known custom mode by what it does`() {
+        assertEquals("C1 30%", LightModes.label(64, mapOf(64 to steadyC1)))
+        assertEquals("C1 FLASH", LightModes.label(64, mapOf(64 to flashC1)))
+        assertEquals("C1 BREATH", LightModes.label(64, mapOf(64 to steadyC1.copy(selected = CustomMode.BREATH))))
+        // Without the selected pattern's data the config says nothing: labelled as unknown.
+        assertEquals("LOW", LightModes.label(64, mapOf(64 to CustomModeConfig(64, CustomMode.STEADY, emptyList()))))
+        assertEquals("LO", LightModes.shortLabel(64, mapOf(64 to CustomModeConfig(64, CustomMode.FLASH, emptyList()))))
+        assertEquals("C1", LightModes.shortLabel(64, mapOf(64 to steadyC1)))
+        assertEquals("LOW", LightModes.label(64, emptyMap())) // unknown: as before
+        assertEquals("LO", LightModes.shortLabel(64, emptyMap()))
+        assertEquals("HIGH", LightModes.label(1, mapOf(64 to steadyC1)))
     }
 }

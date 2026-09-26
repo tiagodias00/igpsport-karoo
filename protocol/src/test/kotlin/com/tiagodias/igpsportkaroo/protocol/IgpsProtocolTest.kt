@@ -2,6 +2,7 @@ package com.tiagodias.igpsportkaroo.protocol
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -135,5 +136,109 @@ class IgpsProtocolTest {
     fun `expected length only trusts byte 8 on data frames`() {
         assertEquals(30, IgpsProtocol.expectedLength(IgpsProtocol.setMode(12)))
         assertEquals(20, IgpsProtocol.expectedLength(Hex.decode("03 6A 05 FF 02 FF FF 00 FF FF 01 2C 01 00 00 FF FF FF FF BE")))
+    }
+
+    // Derived with tools/probe/igps.py (not captured).
+    private val customReplySteady = Hex.decode(
+        "01 6A 03 FF 02 FF FF 00 24 42 01 FF FF FF FF FF FF FF FF C1 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 1E " +
+            "1A 10 08 01 12 04 08 02 10 64 1A 02 08 02 22 02 08 1E",
+    )
+    private val steady30 = CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30)))
+    private val flash100 = CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), cycleSeconds = 2, ratioPercent = 30)
+
+    @Test
+    fun `builds custom-mode requests like the iGPSPORT app`() {
+        assertEquals(
+            "01 6A 03 FF 02 FF FF 00 0A 2B 01 FF FF FF FF FF FF FF FF 79 08 6A 10 02 18 03 3A 02 08 40",
+            hex(IgpsProtocol.readCustomMode(64)),
+        )
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 0A A8 01 FF FF FF FF FF FF FF FF F9 08 6A 10 01 18 03 62 02 08 40",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Pattern(CustomMode.STEADY))),
+        )
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 0C B6 01 FF FF FF FF FF FF FF FF C9 08 6A 10 01 18 03 62 04 08 40 10 01",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Pattern(CustomMode.FLASH))),
+        )
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 10 24 01 FF FF FF FF FF FF FF FF 36 08 6A 10 01 18 03 62 08 08 40 1A 04 08 02 10 28",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 40))),
+        )
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 10 95 01 FF FF FF FF FF FF FF FF 7E 08 6A 10 01 18 03 62 08 08 40 10 01 22 02 08 02",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Cycle(CustomMode.FLASH, 2))),
+        )
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 10 B7 01 FF FF FF FF FF FF FF FF 63 08 6A 10 01 18 03 62 08 08 40 10 01 2A 02 08 1E",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Ratio(CustomMode.FLASH, 30))),
+        )
+    }
+
+    @Test
+    fun `leaves zero values out of custom-mode frames like proto3`() {
+        // High beam (lightNum 0): the value message only holds pct.
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 0E 20 01 FF FF FF FF FF FF FF FF F2 08 6A 10 01 18 03 62 06 08 40 1A 02 10 28",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.HIGH_BEAM, 40))),
+        )
+        // 0 %: the value message only holds lightNum.
+        assertEquals(
+            "01 6A 03 FF 01 FF FF 00 0E E7 01 FF FF FF FF FF FF FF FF D1 08 6A 10 01 18 03 62 06 08 40 1A 02 08 02",
+            hex(IgpsProtocol.modifyCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 0))),
+        )
+    }
+
+    @Test
+    fun `rejects values outside the app's ranges`() {
+        listOf(
+            CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 101),
+            CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, -1),
+            CustomChange.Cycle(CustomMode.FLASH, 0),
+            CustomChange.Cycle(CustomMode.FLASH, 5),
+            CustomChange.Ratio(CustomMode.FLASH, 5),
+            CustomChange.Ratio(CustomMode.FLASH, 60),
+            CustomChange.Pattern(3),
+        ).forEach { change ->
+            assertThrows(IllegalArgumentException::class.java) { IgpsProtocol.modifyCustomMode(64, change) }
+        }
+        assertThrows(IllegalArgumentException::class.java) { IgpsProtocol.readCustomMode(63) }
+        assertThrows(IllegalArgumentException::class.java) { IgpsProtocol.modifyCustomMode(76, CustomChange.Pattern(CustomMode.STEADY)) }
+    }
+
+    @Test
+    fun `parses a custom-mode reply`() {
+        assertEquals(
+            LightUpdate(customMode = CustomModeConfig(64, CustomMode.STEADY, listOf(steady30, flash100))),
+            IgpsProtocol.parseFrame(customReplySteady),
+        )
+    }
+
+    @Test
+    fun `parses an empty custom-mode reply as nothing`() {
+        // An empty modeArg (e.g. an undeclared slot) carries no mode: no custom config, not a crash.
+        val empty = Hex.decode("01 6A 03 FF 02 FF FF 00 08 9B 01 FF FF FF FF FF FF FF FF 4C 08 6A 10 02 18 03 42 00")
+        assertEquals(LightUpdate(), IgpsProtocol.parseFrame(empty))
+    }
+
+    @Test
+    fun `parses the custom-mode reply captured from the real VS1200S`() {
+        // Read with the PC probe before any edit: custom 64 as the light shipped it (its LOW).
+        val reply = Hex.decode(
+            "01 6A 03 FF 02 FF FF 00 24 F3 01 FF FF FF FF FF FF FF FF 89 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 11 " +
+                "1A 10 08 01 12 04 08 02 10 14 1A 02 08 04 22 02 08 19",
+        )
+        assertEquals(
+            LightUpdate(
+                customMode = CustomModeConfig(
+                    64,
+                    CustomMode.STEADY,
+                    listOf(
+                        CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 17))),
+                        CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 20)), cycleSeconds = 4, ratioPercent = 25),
+                    ),
+                ),
+            ),
+            IgpsProtocol.parseFrame(reply),
+        )
     }
 }

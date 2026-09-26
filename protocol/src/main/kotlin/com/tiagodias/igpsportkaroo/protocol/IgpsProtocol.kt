@@ -36,6 +36,7 @@ object IgpsProtocol {
 
     private const val SUB_MODE_SUPPORTED = 1
     private const val SUB_MODE_CURRENT = 2
+    private const val SUB_CUSTOM_MODE = 3
     private const val SUB_SMART_CONFIG = 4
     private const val SUB_REMAINING_TIME = 5
     private const val SUB_BATTERY = 6
@@ -46,9 +47,12 @@ object IgpsProtocol {
     private const val F_OPERATE = 2
     private const val F_SUB = 3
     private const val F_MODE_DECLARED = 6
+    private const val F_CUSTOM_MODE_GET = 7
+    private const val F_CUSTOM_MODE_ARG = 8
     private const val F_SMART_CONFIG_DECLARED = 9
     private const val F_SMART_CONFIG_SET = 10
     private const val F_MODE_ENABLE = 11
+    private const val F_CUSTOM_MODE_MODIFY = 12
     private const val F_CURRENT_MODE = 13
     private const val F_REMAINING_TIME = 14
     private const val F_BATTERY = 15
@@ -78,6 +82,42 @@ object IgpsProtocol {
         if (enabled) inner += ProtoWire.varintField(2, 1)
         return message(SUB_MODE_ENABLE, OP_WRITE, ProtoWire.messageField(F_MODE_ENABLE, inner))
     }
+
+    /** Asks for custom slot [mode]'s config; the light answers with field 8 ([LightUpdate.customMode]). */
+    fun readCustomMode(mode: Int): ByteArray {
+        require(mode in CustomMode.SLOTS) { "not a custom mode: $mode" }
+        return message(SUB_CUSTOM_MODE, OP_READ, ProtoWire.messageField(F_CUSTOM_MODE_GET, ProtoWire.varintField(1, mode.toLong())))
+    }
+
+    /**
+     * One change to custom slot [mode] (blt_cus_mode_modify). Zero values are left out, like proto3 and the
+     * iGPSPORT app do. Values outside the app's ranges are rejected: the light itself stores anything.
+     */
+    fun modifyCustomMode(mode: Int, change: CustomChange): ByteArray {
+        require(mode in CustomMode.SLOTS) { "not a custom mode: $mode" }
+        require(change.subtype in CustomMode.SUBTYPES) { "unknown pattern: ${change.subtype}" }
+        val body = when (change) {
+            is CustomChange.Pattern -> ByteArray(0)
+            is CustomChange.Brightness -> {
+                require(change.pct in CustomMode.PCT) { "brightness out of range: ${change.pct}" }
+                ProtoWire.messageField(3, optionalVarint(1, change.lightNum) + optionalVarint(2, change.pct))
+            }
+            is CustomChange.Cycle -> {
+                require(change.seconds in CustomMode.CYCLE_SECONDS) { "cycle out of range: ${change.seconds}" }
+                ProtoWire.messageField(4, optionalVarint(1, change.seconds))
+            }
+            is CustomChange.Ratio -> {
+                require(change.percent in CustomMode.RATIO_PERCENT) { "ratio out of range: ${change.percent}" }
+                ProtoWire.messageField(5, optionalVarint(1, change.percent))
+            }
+        }
+        val inner = ProtoWire.varintField(1, mode.toLong()) + optionalVarint(2, change.subtype) + body
+        return message(SUB_CUSTOM_MODE, OP_WRITE, ProtoWire.messageField(F_CUSTOM_MODE_MODIFY, inner))
+    }
+
+    /** proto3 leaves a zero value out of the frame. */
+    private fun optionalVarint(field: Int, value: Int): ByteArray =
+        if (value == 0) ByteArray(0) else ProtoWire.varintField(field, value.toLong())
 
     private fun message(sub: Int, op: Int, body: ByteArray = ByteArray(0)): ByteArray {
         val payload = ProtoWire.varintField(F_SERVICE, SERVICE_LIGHT.toLong()) +
@@ -166,7 +206,26 @@ object IgpsProtocol {
             remainingMinutes = fields.message(F_REMAINING_TIME)?.let { ProtoWire.parse(it)?.varint(1)?.toInt() },
             declaredModes = declared,
             smartConfigs = smartConfigs,
+            customMode = fields.message(F_CUSTOM_MODE_ARG)?.let(::parseCustomMode),
         )
+    }
+
+    /** blt_cus_mode_arg; null without a mode (an empty reply). Missing values are the proto3 default, 0. */
+    private fun parseCustomMode(bytes: ByteArray): CustomModeConfig? {
+        val f = ProtoWire.parse(bytes) ?: return null
+        val mode = f.varint(1)?.toInt() ?: return null
+        val patterns = f.messages(3).mapNotNull { raw ->
+            val p = ProtoWire.parse(raw) ?: return@mapNotNull null
+            CustomPattern(
+                subtype = p.varint(1)?.toInt() ?: CustomMode.STEADY,
+                lights = p.messages(2).mapNotNull { l ->
+                    ProtoWire.parse(l)?.let { CustomLight(it.varint(1)?.toInt() ?: 0, it.varint(2)?.toInt() ?: 0) }
+                },
+                cycleSeconds = p.message(3)?.let { ProtoWire.parse(it)?.varint(1)?.toInt() ?: 0 },
+                ratioPercent = p.message(4)?.let { ProtoWire.parse(it)?.varint(1)?.toInt() ?: 0 },
+            )
+        }
+        return CustomModeConfig(mode, f.varint(2)?.toInt() ?: CustomMode.STEADY, patterns)
     }
 
     /** Repeated message [field] as an ordered map built by [entry]; null when the frame has no such field. */

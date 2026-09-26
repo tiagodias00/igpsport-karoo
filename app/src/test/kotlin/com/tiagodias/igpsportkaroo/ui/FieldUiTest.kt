@@ -1,5 +1,9 @@
 package com.tiagodias.igpsportkaroo.ui
 
+import com.tiagodias.igpsportkaroo.protocol.CustomLight
+import com.tiagodias.igpsportkaroo.protocol.CustomMode
+import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
+import com.tiagodias.igpsportkaroo.protocol.CustomPattern
 import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.LightUpdate
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
@@ -210,5 +214,70 @@ class FieldUiTest {
     fun `formats minutes`() {
         assertEquals("45m", FieldUi.formatMinutes(45))
         assertEquals("1h 0m", FieldUi.formatMinutes(60))
+    }
+
+    private val c1 = CustomModeConfig(
+        64, CustomMode.STEADY,
+        listOf(
+            CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30))),
+            CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 2, 30),
+            CustomPattern(CustomMode.BREATH, listOf(CustomLight(CustomMode.MAIN, 60))),
+        ),
+    )
+
+    @Test
+    fun `a known steady custom mode shows its brightness on SOLID`() {
+        val ui = FieldUi.from(high.apply(LightUpdate(customMode = c1)).apply(LightUpdate(mode = 64)))
+        assertTrue(ui.button(Kind.SOLID).active)
+        assertEquals("C1 30%", ui.button(Kind.SOLID).detail)
+        assertEquals("SOL C1", ui.button(Kind.SOLID).compactText(maxChars = 8))
+    }
+
+    @Test
+    fun `a flashing custom mode marks FLASH`() {
+        val ui = FieldUi.from(high.apply(LightUpdate(customMode = c1.copy(selected = CustomMode.FLASH))).apply(LightUpdate(mode = 64)))
+        assertEquals(listOf(false, true, false, false), ui.buttons.map { it.active })
+        assertEquals("C1", ui.button(Kind.FLASH).detail)
+        assertEquals("HIGH", ui.button(Kind.SOLID).detail) // SOLID falls back to the last steady level
+    }
+
+    @Test
+    fun `auto detail labels a known custom mode, keeping the DIMMED suffix`() {
+        val custom = autoOn.apply(LightUpdate(customMode = c1)).apply(LightUpdate(mode = 64))
+        assertEquals("C1 30%", FieldUi.from(custom).button(Kind.AUTO).detail)
+        val dimmed = FieldUi.from(custom.copy(autoDimmed = true)).button(Kind.AUTO)
+        assertEquals("C1 30% DIMMED", dimmed.detail)
+        assertEquals("C1 DIM", dimmed.shortDetail)
+    }
+
+    @Test
+    fun `a flash config that arrives after the mode shows the custom slot under FLASH`() {
+        val ui = FieldUi.from(high.apply(LightUpdate(mode = 64)).apply(LightUpdate(customMode = c1.copy(selected = CustomMode.FLASH))))
+        assertEquals(listOf(false, true, false, false), ui.buttons.map { it.active })
+        assertEquals("C1", ui.button(Kind.FLASH).detail)
+        assertEquals("FLS C1", ui.button(Kind.FLASH).compactText(maxChars = 8))
+        assertEquals("HIGH", ui.button(Kind.SOLID).detail)
+    }
+
+    @Test
+    fun `switching the playing custom slot's pattern moves its label between SOLID and FLASH`() {
+        val steady = high.apply(LightUpdate(customMode = c1)).apply(LightUpdate(mode = 64))
+        val flashing = FieldUi.from(steady.apply(LightUpdate(customMode = c1.copy(selected = CustomMode.FLASH))))
+        assertEquals("C1", flashing.button(Kind.FLASH).detail)
+        assertEquals("HIGH", flashing.button(Kind.SOLID).detail)
+
+        val wasFlashing = high.apply(LightUpdate(customMode = c1.copy(selected = CustomMode.FLASH))).apply(LightUpdate(mode = 64))
+        val nowSteady = FieldUi.from(wasFlashing.apply(LightUpdate(customMode = c1)))
+        assertTrue(nowSteady.button(Kind.SOLID).active)
+        assertEquals("C1 30%", nowSteady.button(Kind.SOLID).detail)
+        assertEquals("FL HI", nowSteady.button(Kind.FLASH).detail)
+    }
+
+    @Test
+    fun `auto detail labels a breathing custom mode`() {
+        val breath = autoOn.apply(LightUpdate(customMode = c1.copy(selected = CustomMode.BREATH))).apply(LightUpdate(mode = 64))
+        val dimmed = FieldUi.from(breath.copy(autoDimmed = true)).button(Kind.AUTO)
+        assertEquals("C1 BREATH DIMMED", dimmed.detail)
+        assertEquals("C1 DIM", dimmed.shortDetail)
     }
 }

@@ -3,6 +3,9 @@ package com.tiagodias.igpsportkaroo.light
 import com.tiagodias.igpsportkaroo.ble.LightLink
 import com.tiagodias.igpsportkaroo.ble.LinkEvent
 import com.tiagodias.igpsportkaroo.protocol.AutoDimTracker
+import com.tiagodias.igpsportkaroo.protocol.CustomChange
+import com.tiagodias.igpsportkaroo.protocol.CustomMode
+import com.tiagodias.igpsportkaroo.protocol.CustomModeConfig
 import com.tiagodias.igpsportkaroo.protocol.FrameAssembler
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
@@ -121,6 +124,10 @@ class LightSession(
                     val update = IgpsProtocol.parseFrame(frame)
                     frameLog?.invoke("rx ${Hex.encode(frame)} -> $update")
                     update?.let { u -> synchronized(commandLock) { _state.value = applyReport(_state.value, u) } }
+                    // Each declared custom slot's config decides whether it is SOLID or FLASH and how it's labelled.
+                    update?.declaredModes?.keys?.filter { it in CustomMode.SLOTS }?.forEach {
+                        link.send(IgpsProtocol.readCustomMode(it))
+                    }
                 }
             }
         }
@@ -179,11 +186,69 @@ class LightSession(
         return link.send(IgpsProtocol.readSmartConfigs())
     }
 
-    /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
-    fun selectSolid(): Boolean = selectManual(LightModes.STEADY, LightState::steadyLevels) { it.steadyLevel }
+    /**
+     * Writes one [change] to custom slot [mode], shows it at once and queues a read-back of the slot (the light
+     * only ACKs). The light applies an edit to the playing slot live, so nothing is re-selected. True means the
+     * frames were queued on the link, not that the light took them: the read-back, or the next connect's read,
+     * corrects the shown config if it didn't. False when not connected, or while the slot's config is unknown
+     * (nothing to edit yet). Also false, without sending anything, for a value outside the app's ranges: the
+     * light validates nothing, so the caller clamps, but a miss must not crash the process the extension service
+     * runs in. Never throws. Serialized on [commandLock], like the other commands.
+     */
+    fun changeCustomMode(mode: Int, change: CustomChange): Boolean = synchronized(commandLock) {
+        val current = _state.value.customModes[mode] ?: return false
+        val frame = customFrames(mode, listOf(change))?.single() ?: return false
+        if (!link.send(frame)) return false
+        // Through apply(), so a pattern switch on the playing slot moves it between SOLID and FLASH at once.
+        _state.value = _state.value.apply(LightUpdate(customMode = current.applied(change))).afterCustomEdit(mode)
+        return link.send(IgpsProtocol.readCustomMode(mode))
+    }
 
-    /** FLASH: the same as [selectSolid] for the flash levels. */
-    fun selectFlash(): Boolean = selectManual(LightModes.FLASHING, LightState::flashLevels) { it.flashLevel }
+    /**
+     * Turns custom slot [target.mode] back into [target] with only the writes that differ (the pattern switch
+     * last), then queues a read-back. Without sending anything: true when the last known config already matches
+     * and the light is connected; false when a write would carry a value outside the app's ranges (a snapshot the
+     * light stored wrongly). False, with the state left as it was, when the link refuses a frame partway; some
+     * writes may have landed, and the next connect reads the slot again. As with [changeCustomMode], true means
+     * queued, not confirmed: a write the link drops after queueing it (it clears its queue on a failed write,
+     * read-back included) shows as restored until the slot is read again, at the latest on the next connect.
+     */
+    fun restoreCustomMode(target: CustomModeConfig): Boolean = synchronized(commandLock) {
+        val current = _state.value.customModes[target.mode] ?: return false
+        val changes = current.changesTo(target)
+        if (changes.isEmpty()) return _state.value.connected
+        // Every frame is built before the first is sent, so an invalid value can't leave a half-restored slot.
+        val frames = customFrames(target.mode, changes) ?: return false
+        for (frame in frames) if (!link.send(frame)) return false
+        val restored = changes.fold(current) { c, ch -> c.applied(ch) }
+        _state.value = _state.value.apply(LightUpdate(customMode = restored)).afterCustomEdit(target.mode)
+        return link.send(IgpsProtocol.readCustomMode(target.mode))
+    }
+
+    /**
+     * An edit to the playing slot changes its brightness, so its run time moves: the auto-dim reference no longer
+     * means anything. The next run-time report (at the new brightness) starts a fresh one; seeding it now would
+     * use the run time from before the edit. Callers hold [commandLock] and assign the result to `_state.value`.
+     */
+    private fun LightState.afterCustomEdit(mode: Int): LightState {
+        if (mode != this.mode) return this
+        dimTracker.reset()
+        return copy(autoDimmed = false)
+    }
+
+    /** The frames for [changes] to custom slot [mode], or null (logged) if any value is outside the app's ranges. */
+    private fun customFrames(mode: Int, changes: List<CustomChange>): List<ByteArray>? = try {
+        changes.map { IgpsProtocol.modifyCustomMode(mode, it) }
+    } catch (e: IllegalArgumentException) {
+        Timber.w(e, "Not writing custom mode %d", mode)
+        null
+    }
+
+    /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
+    fun selectSolid(): Boolean = selectManual({ it.isSteady(it.mode) }, { it.steadyLevels }) { it.steadyLevel }
+
+    /** FLASH: the same as [selectSolid] for the flash levels (built-in flash modes, then custom slots that blink). */
+    fun selectFlash(): Boolean = selectManual({ it.isFlashing(it.mode) }, { it.flashLevels }) { it.flashLevel }
 
     /** AUTO: switches auto light on, and the light itself on (current steady level) if we switched it off. */
     fun selectAuto(): Boolean = synchronized(commandLock) {
@@ -195,17 +260,17 @@ class LightSession(
     }
 
     /**
-     * Goes to a mode of [group]: the next of [levels] when the light is already in the group (on, manual),
-     * else [current] (the last one used, or the light's first). SOLID and FLASH are manual, so auto light is
-     * switched off first. One atomic step on [commandLock].
+     * Goes to a mode of a group: the next of [levels] when the light is already in the group ([inGroup]; on,
+     * manual), else [current] (the last one used, or the light's first). SOLID and FLASH are manual, so auto
+     * light is switched off first. One atomic step on [commandLock].
      */
     private fun selectManual(
-        group: Set<Int>,
+        inGroup: (LightState) -> Boolean,
         levels: (LightState) -> List<Int>,
         current: (LightState) -> Int?,
     ): Boolean = synchronized(commandLock) {
         val s = _state.value
-        val cycling = !s.poweredOff && !s.autoLightOn && s.mode in group
+        val cycling = !s.poweredOff && !s.autoLightOn && inGroup(s)
         val next = if (cycling) LightModes.next(s.mode, levels(s)) else null
         val target = next ?: current(s) ?: return false
         return selectManualMode(target)
