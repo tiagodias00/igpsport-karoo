@@ -133,7 +133,8 @@ class LightSession(
         }
         if (!link.send(IgpsProtocol.setMode(mode))) return false
         offCommandAt = null
-        _state.update { it.copy(poweredOff = false) }
+        // Optimistic: the field shows the new mode right away; the read-back below confirms or corrects it.
+        _state.update { it.copy(mode = mode, poweredOff = false) }
         // The light only ACKs writes: read the mode back so the UI shows what it really did.
         return link.send(IgpsProtocol.readCurrentMode())
     }

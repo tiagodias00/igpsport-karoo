@@ -252,6 +252,18 @@ class LightSessionTest {
     }
 
     @Test
+    fun `selected mode shows immediately before the light confirms`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        link.events.tryEmit(LinkEvent.Fragment(respMode3))
+        runCurrent()
+        session.selectMode(LightModes.OFF)
+        assertTrue(session.selectMode(5)) // no fragments delivered after this
+        assertEquals(5, session.state.value.mode)
+        assertFalse(session.state.value.poweredOff)
+    }
+
+    @Test
     fun `commands report failure when the link refuses`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)
