@@ -1,5 +1,6 @@
 .gradle/
 build/
+.kotlin/
 local.properties
 .idea/
 *.iml
@@ -9,3 +10,5 @@ captures/
 tools/probe/.venv/
 __pycache__/
 .pytest_cache/
+docs/
+.superpowers/
