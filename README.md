@@ -26,6 +26,10 @@ around your ride.
   - Auto sleep
   - Auto dim when stopped
   - Low-battery saving
+- **A custom-mode editor** (app page → Customise light modes): set the light's custom mode to
+  steady or flash, its brightness, and the flash cycle and on-time. Changes apply to the light
+  right away, and "Restore original" puts back what it had before. The ride field shows the
+  custom mode as e.g. `C1 17%` or `C1 FLASH`.
 - **Hardware / bonus button actions**, mappable in Settings → Controls: next mode, solid (next
   level), flash (next level), auto, light off, open controls.
 - **A mode to set when a ride starts** — pick a fixed mode, AUTO, or "don't change" — and an
