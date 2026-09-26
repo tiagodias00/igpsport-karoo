@@ -7,6 +7,7 @@
   python probe.py custom-read <ADDRESS> [MODE]            # read custom mode MODE (default 64)
   python probe.py custom-set  <ADDRESS> MODE [--subtype S] [--light N P | --cycle C | --ratio R]
                                                           # one change, then read it back
+      WARNING: custom-set writes are permanent and unchecked: the light stores any value (even 101 %).
 
 The iGPSPORT phone app must be closed / phone Bluetooth off: the light accepts one connection.
 """

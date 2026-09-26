@@ -848,7 +848,7 @@ class LightSessionTest {
         session.stop()
     }
 
-    // Derived with tools/probe/igps.py (docs/custom-modes-research.md §8): slot 64, steady main 30 %,
+    // Derived with tools/probe/igps.py: slot 64, steady main 30 %,
     // flash main 100 % / 2 s / 30 %; selected steady resp. flash.
     private val customReplySteady = Hex.decode(
         "01 6A 03 FF 02 FF FF 00 24 42 01 FF FF FF FF FF FF FF FF C1 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 1E " +
@@ -858,7 +858,7 @@ class LightSessionTest {
         "01 6A 03 FF 02 FF FF 00 26 86 01 FF FF FF FF FF FF FF FF 1A 08 6A 10 02 18 03 42 1E 08 40 10 01 1A 06 12 04 08 02 10 1E " +
             "1A 10 08 01 12 04 08 02 10 64 1A 02 08 02 22 02 08 1E",
     )
-    // Captured from the real VS1200S (docs/vs1200s-findings.md, restore point): slot 64 plays steady;
+    // Captured from the real VS1200S before any edit: slot 64 plays steady;
     // steady main 17 %, flash main 20 % / 4 s / 25 %.
     private val vs1200sCustom64 = Hex.decode(
         "01 6A 03 FF 02 FF FF 00 24 F3 01 FF FF FF FF FF FF FF FF 89 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 11 " +
@@ -1017,6 +1017,36 @@ class LightSessionTest {
         assertTrue(session.state.value.customModes.getValue(64).blinks)
         report(link, customReplySteady) // the light says it still plays steady
         assertFalse(session.state.value.customModes.getValue(64).blinks)
+    }
+
+    @Test
+    fun `editing the playing custom slot starts a fresh auto-dim reference`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, customReplySteady, stateMode(64)) // AUTO_LIGHT on, custom 64
+        report(link, vs1200sRunTime155, vs1200sRunTime235)
+        assertTrue(session.state.value.autoDimmed)
+        // A brightness edit moves the run time on its own: the old "full" reference no longer means anything.
+        assertTrue(session.changeCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 40)))
+        assertFalse(session.state.value.autoDimmed)
+        report(link, vs1200sRunTime235) // the new level's run time is the new reference, not "dimmed"
+        assertFalse(session.state.value.autoDimmed)
+        report(link, vs1200sRunTime155)
+        report(link, vs1200sRunTime235)
+        assertTrue(session.state.value.autoDimmed)
+        assertTrue(session.restoreCustomMode(c1Steady))
+        assertFalse(session.state.value.autoDimmed)
+    }
+
+    @Test
+    fun `editing a custom slot that isn't playing keeps the auto-dim reference`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, customReplySteady, stateMode(1)) // AUTO_LIGHT on, HIGH
+        report(link, vs1200sRunTime155, vs1200sRunTime235)
+        assertTrue(session.state.value.autoDimmed)
+        assertTrue(session.changeCustomMode(64, CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 40)))
+        assertTrue(session.state.value.autoDimmed)
     }
 
     @Test

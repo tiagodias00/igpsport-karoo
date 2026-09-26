@@ -68,7 +68,8 @@ data class LightState(
 
     fun apply(update: LightUpdate): LightState {
         val newMode = update.mode
-        val customs = update.customMode?.let { customModes + (it.mode to it) } ?: customModes
+        // A config without its selected pattern's data says nothing about the slot: it counts as unknown.
+        val customs = update.customMode?.let { if (it.known) customModes + (it.mode to it) else customModes - it.mode } ?: customModes
         // A new mode is classified as it arrives. So is the playing slot when its config arrives: it is read
         // after the mode on connect, and a pattern switch brings no mode report.
         val classify = newMode ?: mode?.takeIf { it == update.customMode?.mode }

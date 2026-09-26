@@ -187,28 +187,31 @@ class LightSession(
     }
 
     /**
-     * Writes one [change] to custom slot [mode], shows it at once and reads the slot back (the light only ACKs).
-     * False when not connected, or while the slot's config is unknown (nothing to edit yet). Also false, without
-     * sending anything, for a value outside the app's ranges: the light validates nothing, so the caller clamps,
-     * but a miss must not crash the process the extension service runs in. Never throws. Serialized on
-     * [commandLock], like the other commands.
+     * Writes one [change] to custom slot [mode], shows it at once and queues a read-back of the slot (the light
+     * only ACKs). The light applies an edit to the playing slot live, so nothing is re-selected. True means the
+     * frames were queued on the link, not that the light took them: the read-back, or the next connect's read,
+     * corrects the shown config if it didn't. False when not connected, or while the slot's config is unknown
+     * (nothing to edit yet). Also false, without sending anything, for a value outside the app's ranges: the
+     * light validates nothing, so the caller clamps, but a miss must not crash the process the extension service
+     * runs in. Never throws. Serialized on [commandLock], like the other commands.
      */
     fun changeCustomMode(mode: Int, change: CustomChange): Boolean = synchronized(commandLock) {
         val current = _state.value.customModes[mode] ?: return false
         val frame = customFrames(mode, listOf(change))?.single() ?: return false
         if (!link.send(frame)) return false
         // Through apply(), so a pattern switch on the playing slot moves it between SOLID and FLASH at once.
-        _state.value = _state.value.apply(LightUpdate(customMode = current.applied(change)))
-        reselectIfPlaying(mode)
+        _state.value = _state.value.apply(LightUpdate(customMode = current.applied(change))).afterCustomEdit(mode)
         return link.send(IgpsProtocol.readCustomMode(mode))
     }
 
     /**
      * Turns custom slot [target.mode] back into [target] with only the writes that differ (the pattern switch
-     * last), then reads it back. Without sending anything: true when the last known config already matches and
-     * the light is connected; false when a write would carry a value outside the app's ranges (a snapshot the
-     * light stored wrongly). If the link drops partway, some writes may have landed: false, the state is left
-     * as it was, and the next connect reads the slot again. Otherwise the same rules as [changeCustomMode].
+     * last), then queues a read-back. Without sending anything: true when the last known config already matches
+     * and the light is connected; false when a write would carry a value outside the app's ranges (a snapshot the
+     * light stored wrongly). False, with the state left as it was, when the link refuses a frame partway; some
+     * writes may have landed, and the next connect reads the slot again. As with [changeCustomMode], true means
+     * queued, not confirmed: a write the link drops after queueing it (it clears its queue on a failed write,
+     * read-back included) shows as restored until the slot is read again, at the latest on the next connect.
      */
     fun restoreCustomMode(target: CustomModeConfig): Boolean = synchronized(commandLock) {
         val current = _state.value.customModes[target.mode] ?: return false
@@ -218,9 +221,18 @@ class LightSession(
         val frames = customFrames(target.mode, changes) ?: return false
         for (frame in frames) if (!link.send(frame)) return false
         val restored = changes.fold(current) { c, ch -> c.applied(ch) }
-        _state.value = _state.value.apply(LightUpdate(customMode = restored))
-        reselectIfPlaying(target.mode)
+        _state.value = _state.value.apply(LightUpdate(customMode = restored)).afterCustomEdit(target.mode)
         return link.send(IgpsProtocol.readCustomMode(target.mode))
+    }
+
+    /**
+     * An edit to the playing slot changes its brightness, so its run time moves: the auto-dim reference no longer
+     * means anything, and a fresh one starts. Callers hold [commandLock] and assign the result to `_state.value`.
+     */
+    private fun LightState.afterCustomEdit(mode: Int): LightState {
+        if (mode != this.mode) return this
+        dimTracker.reset()
+        return withAutoDimmed()
     }
 
     /** The frames for [changes] to custom slot [mode], or null (logged) if any value is outside the app's ranges. */
@@ -230,9 +242,6 @@ class LightSession(
         Timber.w(e, "Not writing custom mode %d", mode)
         null
     }
-
-    /** Edits apply live on the VS1200S (docs/vs1200s-findings.md), so nothing to do. */
-    private fun reselectIfPlaying(@Suppress("UNUSED_PARAMETER") mode: Int) = Unit
 
     /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
     fun selectSolid(): Boolean = selectManual({ it.isSteady(it.mode) }, { it.steadyLevels }) { it.steadyLevel }

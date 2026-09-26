@@ -1,6 +1,6 @@
 package com.tiagodias.igpsportkaroo.protocol
 
-/** Custom light modes (sub-service 3): constants and ranges from docs/custom-modes-research.md §4 and §7. */
+/** Custom light modes (sub-service 3): the protocol's constants and the iGPSPORT app's ranges. */
 object CustomMode {
     /** BLE_LIGHT_CUSTOM_SUBTYPE: the pattern a slot plays. */
     const val STEADY = 0
@@ -14,9 +14,12 @@ object CustomMode {
 
     /** BLM_CUSTOMIZE_1..12. */
     val SLOTS = 64..75
+
+    /** The slot's number as the iGPSPORT app shows it: 64 is CUSTOM 1. */
+    fun number(mode: Int): Int = mode - SLOTS.first + 1
     val SUBTYPES = STEADY..BREATH
 
-    /** The iGPSPORT app's slider ranges. The light itself validates nothing (it stores 101 %). */
+    /** The iGPSPORT app's slider ranges. The light itself validates nothing (it stores 101 %, and keeps it). */
     val PCT = 0..100
     val CYCLE_SECONDS = 1..4
     val RATIO_PERCENT = 10..50
@@ -41,15 +44,18 @@ data class CustomPattern(
 data class CustomModeConfig(val mode: Int, val selected: Int, val patterns: List<CustomPattern>) {
     val active: CustomPattern? get() = patterns.firstOrNull { it.subtype == selected }
 
-    /** Flash and breath blink; steady doesn't. */
-    val blinks: Boolean get() = selected != CustomMode.STEADY
+    /** Whether the light said what the slot plays: the selected pattern's data came with it. */
+    val known: Boolean get() = active != null
+
+    /** Flash and breath blink; steady doesn't. A config that isn't [known] counts as steady, like no config. */
+    val blinks: Boolean get() = known && selected != CustomMode.STEADY
 
     val brightness: Int? get() = active?.mainPct
 
     /**
      * This config after the light accepted [change]. A change also selects its pattern: the iGPSPORT app always
-     * sends the pattern it wants playing (docs/custom-modes-research.md §7). The session's read-back corrects it
-     * if the light disagrees.
+     * sends the pattern it wants playing with every write. The session's read-back corrects it if the light
+     * disagrees.
      */
     fun applied(change: CustomChange): CustomModeConfig = copy(
         selected = change.subtype,

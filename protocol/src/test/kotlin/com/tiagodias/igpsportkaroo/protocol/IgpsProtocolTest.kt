@@ -138,7 +138,7 @@ class IgpsProtocolTest {
         assertEquals(20, IgpsProtocol.expectedLength(Hex.decode("03 6A 05 FF 02 FF FF 00 FF FF 01 2C 01 00 00 FF FF FF FF BE")))
     }
 
-    // docs/custom-modes-research.md §8: derived with tools/probe/igps.py (not captured).
+    // Derived with tools/probe/igps.py (not captured).
     private val customReplySteady = Hex.decode(
         "01 6A 03 FF 02 FF FF 00 24 42 01 FF FF FF FF FF FF FF FF C1 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 1E " +
             "1A 10 08 01 12 04 08 02 10 64 1A 02 08 02 22 02 08 1E",
@@ -222,7 +222,7 @@ class IgpsProtocolTest {
 
     @Test
     fun `parses the custom-mode reply captured from the real VS1200S`() {
-        // docs/vs1200s-findings.md "Custom modes (PC probe)", restore point: custom 64 = the user's LOW.
+        // Read with the PC probe before any edit: custom 64 as the light shipped it (its LOW).
         val reply = Hex.decode(
             "01 6A 03 FF 02 FF FF 00 24 F3 01 FF FF FF FF FF FF FF FF 89 08 6A 10 02 18 03 42 1C 08 40 1A 06 12 04 08 02 10 11 " +
                 "1A 10 08 01 12 04 08 02 10 14 1A 02 08 04 22 02 08 19",

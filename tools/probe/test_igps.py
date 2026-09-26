@@ -85,7 +85,7 @@ def test_looks_like_igps():
     assert not igps.looks_like_igps("Garmin HRM", [])
 
 
-# Custom modes (docs/custom-modes-research.md §8). Derived vectors, computed with igps.message().
+# Custom modes. Derived vectors, computed with igps.message().
 READ_CUSTOM_64 = H("016A03FF02FFFF000A2B01FFFFFFFFFFFFFFFF79086A10021803" "3A020840")
 SELECT_STEADY_64 = H("016A03FF01FFFF000AA801FFFFFFFFFFFFFFFFF9086A10011803" "62020840")
 SELECT_FLASH_64 = H("016A03FF01FFFF000CB601FFFFFFFFFFFFFFFFC9086A10011803" "620408401001")

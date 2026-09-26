@@ -131,6 +131,31 @@ class CustomEditorTest {
     }
 
     @Test
+    fun `a slider that no longer fits the playing pattern sends nothing`() {
+        // E.g. the flash sliders still on screen right after a tap on "Steady": the light would store a cycle on steady.
+        assertNull(CustomEditor.changeFor(c1, Key.Cycle, 2))
+        assertNull(CustomEditor.changeFor(c1, Key.Ratio, 20))
+        assertNull(CustomEditor.changeFor(c1, Key.Brightness(CustomMode.LOW_BEAM), 50)) // no such channel in steady
+        assertNull(CustomEditor.changeFor(c1.copy(selected = 5), Key.Brightness(CustomMode.MAIN), 50)) // undefined pattern
+        assertNull(CustomEditor.changeFor(c1.copy(selected = CustomMode.BREATH), Key.Brightness(CustomMode.MAIN), 50)) // no data
+        assertEquals(CustomChange.Brightness(CustomMode.STEADY, CustomMode.MAIN, 40), CustomEditor.changeFor(c1, Key.Brightness(CustomMode.MAIN), 40))
+        val flashing = c1.copy(selected = CustomMode.FLASH)
+        assertEquals(CustomChange.Cycle(CustomMode.FLASH, 3), CustomEditor.changeFor(flashing, Key.Cycle, 3))
+        assertEquals(CustomChange.Ratio(CustomMode.FLASH, 20), CustomEditor.changeFor(flashing, Key.Ratio, 20))
+    }
+
+    @Test
+    fun `a slot whose selected pattern has no data is still reading`() {
+        val noData = c1.copy(selected = CustomMode.BREATH) // c1 has no breath pattern
+        val editor = CustomEditor.from(vs1200s.copy(customModes = mapOf(64 to noData)), 64, c1)
+        assertTrue(editor.reading)
+        assertTrue(editor.patterns.isEmpty())
+        assertTrue(editor.sliders.isEmpty())
+        assertFalse(editor.canPreview)
+        assertFalse(editor.canRestore)
+    }
+
+    @Test
     fun `one slider per channel`() {
         val twice = c1.copy(patterns = listOf(CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30), CustomLight(CustomMode.MAIN, 40)))))
         val editor = CustomEditor.from(vs1200s.apply(LightUpdate(customMode = twice)), 64, null)

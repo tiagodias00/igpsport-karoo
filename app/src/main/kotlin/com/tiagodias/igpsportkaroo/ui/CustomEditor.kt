@@ -7,7 +7,7 @@ import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightState
 
 /**
- * The custom-mode editor as plain data (docs/custom-modes-research.md §7): which slots, which patterns, which
+ * The custom-mode editor as plain data: which slots, which patterns, which
  * sliders. The editor screen only draws it and sends [changeFor]'s changes to the session.
  */
 data class CustomEditor(
@@ -46,7 +46,8 @@ data class CustomEditor(
         fun from(state: LightState, requestedSlot: Int?, original: CustomModeConfig?): CustomEditor {
             val modes = state.declaredModes.keys.filter { it in CustomMode.SLOTS }
             val slot = requestedSlot?.takeIf { it in modes } ?: modes.firstOrNull()
-            val config = slot?.let { state.customModes[it] }
+            // Not known (the selected pattern's data is missing): the same as not read yet.
+            val config = slot?.let { state.customModes[it] }?.takeIf { it.known }
             // A pattern the protocol doesn't define gets no controls: every write to it would be rejected.
             val active = config?.active?.takeIf { it.subtype in CustomMode.SUBTYPES }
             val lights = active?.lights.orEmpty().distinctBy { it.lightNum }.sortedByDescending { it.lightNum }
@@ -61,7 +62,7 @@ data class CustomEditor(
                 }
             }
             return CustomEditor(
-                slots = modes.map { Slot(it, "CUSTOM ${it - CustomMode.SLOTS.first + 1}") },
+                slots = modes.map { Slot(it, "CUSTOM ${CustomMode.number(it)}") },
                 slot = slot,
                 reading = slot != null && config == null,
                 patterns = config?.patterns.orEmpty().filter { it.subtype in CustomMode.SUBTYPES }.sortedBy { it.subtype }
@@ -72,11 +73,19 @@ data class CustomEditor(
             )
         }
 
-        /** The write for moving slider [key] to [value] (clamped into the slider's range) on [config]'s selected pattern. */
-        fun changeFor(config: CustomModeConfig, key: Key, value: Int): CustomChange = when (key) {
-            is Key.Brightness -> CustomChange.Brightness(config.selected, key.lightNum, value.coerceIn(BRIGHTNESS))
-            Key.Cycle -> CustomChange.Cycle(config.selected, value.coerceIn(CustomMode.CYCLE_SECONDS))
-            Key.Ratio -> CustomChange.Ratio(config.selected, value.coerceIn(CustomMode.RATIO_PERCENT))
+        /**
+         * The write for moving slider [key] to [value] (clamped into the slider's range) on [config]'s selected pattern.
+         * Null (nothing to send) when [key] is not a slider of that pattern, e.g. a flash slider still on screen just
+         * after a switch to steady: the light stores whatever it is sent, and a restore can't take such a value away.
+         */
+        fun changeFor(config: CustomModeConfig, key: Key, value: Int): CustomChange? {
+            val active = config.active?.takeIf { it.subtype in CustomMode.SUBTYPES } ?: return null
+            return when (key) {
+                is Key.Brightness -> CustomChange.Brightness(active.subtype, key.lightNum, value.coerceIn(BRIGHTNESS))
+                    .takeIf { active.lights.any { it.lightNum == key.lightNum } }
+                Key.Cycle -> CustomChange.Cycle(active.subtype, value.coerceIn(CustomMode.CYCLE_SECONDS)).takeIf { active.subtype == CustomMode.FLASH }
+                Key.Ratio -> CustomChange.Ratio(active.subtype, value.coerceIn(CustomMode.RATIO_PERCENT)).takeIf { active.subtype == CustomMode.FLASH }
+            }
         }
 
         /** Something differs, and every write back to [original] builds a frame (the same check the session makes). */

@@ -91,7 +91,13 @@ class LightStateTest {
         assertEquals(emptyList<Int>(), LightState().flashLevels)
     }
 
-    private val c1Steady = CustomModeConfig(64, CustomMode.STEADY, listOf(CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30)))))
+    private val c1Steady = CustomModeConfig(
+        64, CustomMode.STEADY,
+        listOf(
+            CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30))),
+            CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 2, 30),
+        ),
+    )
     private val vs1200s = LightState(declaredModes = linkedMapOf(2 to true, 1 to true, 4 to true, 5 to true, 64 to true))
 
     @Test
@@ -152,5 +158,20 @@ class LightStateTest {
         val s = vs1200s.apply(LightUpdate(mode = 5)).apply(LightUpdate(customMode = c1Steady.copy(selected = CustomMode.FLASH)))
         assertEquals(5, s.lastFlashMode)
         assertNull(s.lastSteadyMode)
+    }
+
+    @Test
+    fun `a config without its selected pattern's data counts as unknown`() {
+        val noData = c1Steady.copy(selected = CustomMode.BREATH) // no breath pattern in it
+        assertEquals(emptyMap<Int, CustomModeConfig>(), vs1200s.apply(LightUpdate(customMode = noData)).customModes)
+        // It also replaces a config known before: the light no longer says what the slot does.
+        val playing = vs1200s.apply(LightUpdate(customMode = c1Steady)).apply(LightUpdate(mode = 64))
+        val s = playing.apply(LightUpdate(customMode = noData))
+        assertEquals(emptyMap<Int, CustomModeConfig>(), s.customModes)
+        assertTrue(s.isSteady(64)) // unknown counts as steady
+        assertFalse(s.isFlashing(64))
+        assertEquals("LOW", s.labelOf(64))
+        val empty = CustomModeConfig(64, CustomMode.FLASH, emptyList())
+        assertFalse(vs1200s.apply(LightUpdate(customMode = empty)).customModes.containsKey(64))
     }
 }

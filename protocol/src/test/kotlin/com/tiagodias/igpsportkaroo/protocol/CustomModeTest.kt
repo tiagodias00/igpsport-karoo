@@ -19,8 +19,11 @@ class CustomModeTest {
         val flashing = slot.copy(selected = CustomMode.FLASH)
         assertEquals(flash100, flashing.active)
         assertTrue(flashing.blinks)
-        assertTrue(slot.copy(selected = CustomMode.BREATH).blinks)
+        assertTrue(slot.copy(selected = CustomMode.BREATH, patterns = listOf(steady30, flash100.copy(subtype = CustomMode.BREATH))).blinks)
         assertNull(CustomModeConfig(64, CustomMode.STEADY, emptyList()).active)
+        // Without the selected pattern's data the config is unknown, and unknown counts as steady.
+        assertFalse(slot.copy(selected = CustomMode.BREATH).blinks)
+        assertFalse(CustomModeConfig(64, CustomMode.FLASH, emptyList()).blinks)
     }
 
     @Test

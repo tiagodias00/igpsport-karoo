@@ -221,6 +221,7 @@ class FieldUiTest {
         listOf(
             CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30))),
             CustomPattern(CustomMode.FLASH, listOf(CustomLight(CustomMode.MAIN, 100)), 2, 30),
+            CustomPattern(CustomMode.BREATH, listOf(CustomLight(CustomMode.MAIN, 60))),
         ),
     )
 

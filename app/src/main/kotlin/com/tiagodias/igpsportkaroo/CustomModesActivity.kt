@@ -216,7 +216,7 @@ class CustomModesActivity : Activity() {
                         if (dragging != s.key) return redraw()
                         dragging = null
                         val moved = bar.progress != startProgress
-                        send { cfg -> CustomEditor.changeFor(cfg, s.key, bar.progress).takeIf { moved && cfg.applied(it) != cfg } }
+                        send { cfg -> CustomEditor.changeFor(cfg, s.key, bar.progress)?.takeIf { moved && cfg.applied(it) != cfg } }
                     }
                 })
             }

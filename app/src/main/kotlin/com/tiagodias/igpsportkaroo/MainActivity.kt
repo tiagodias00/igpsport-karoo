@@ -95,9 +95,13 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(content) })
 
+        requestMissingPermissions()
+        updatePermissionStatus()
+    }
+
+    private fun requestMissingPermissions() {
         val missing = Permissions.missing(this)
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQUEST_PERMISSIONS)
-        updatePermissionStatus()
     }
 
     /** Polls the light's state only while the page is visible. */
@@ -118,15 +122,21 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
-    /** Reopened while alive (singleTask): the editor above is already closed, and [onResume] sets [onScreen]. */
+    /**
+     * Reopened while alive (singleTask): the editor above is already closed, and [onResume] sets [onScreen]. The
+     * Karoo's permission notification lands here too, so ask again for what is still missing, as a fresh start would.
+     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        requestMissingPermissions()
     }
 
     override fun onResume() {
         super.onResume()
         onScreen = true
+        // Not a prompt: onResume also follows the permission dialog, and asking again there would loop on a denial.
+        updatePermissionStatus()
     }
 
     override fun onPause() {
