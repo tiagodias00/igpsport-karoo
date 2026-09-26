@@ -23,6 +23,7 @@ import io.hammerhead.karooext.models.RequestBluetooth
 import io.hammerhead.karooext.models.SystemNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -35,6 +36,10 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
 
     private lateinit var karooSystem: KarooSystemService
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The per-connectDevice loop translating session.state into DeviceEvents; owned the same way as [LightHub.session]. */
+    @Volatile
+    private var deviceJob: Job? = null
 
     override val types by lazy { listOf(LightBatteryDataType(extension)) }
 
@@ -85,6 +90,7 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
         val address = uid.removePrefix(UID_PREFIX)
         Timber.i("connectDevice %s", address)
         val session = LightSession(GattLightLink(applicationContext), address, scope)
+        deviceJob?.cancel()
         LightHub.session?.stop()
         LightHub.session = session
         session.start()
@@ -109,14 +115,18 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
                 delay(1000)
             }
         }
+        deviceJob = job
         emitter.setCancellable {
             job.cancel()
+            if (deviceJob === job) deviceJob = null
             session.stop()
             if (LightHub.session === session) LightHub.session = null
         }
     }
 
     override fun onDestroy() {
+        deviceJob?.cancel()
+        deviceJob = null
         LightHub.session?.stop()
         LightHub.session = null
         karooSystem.dispatch(ReleaseBluetooth(extension))
