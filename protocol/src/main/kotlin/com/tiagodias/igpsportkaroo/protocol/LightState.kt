@@ -17,6 +17,11 @@ data class LightState(
     /** The last [LightModes.STEADY] / [LightModes.FLASHING] mode reported, so SOLID / FLASH go back to it. */
     val lastSteadyMode: Int? = null,
     val lastFlashMode: Int? = null,
+    /**
+     * True while auto light looks like it dimmed itself (docs/vs1200s-findings.md), from [AutoDimTracker].
+     * Like [poweredOff], `apply()` must leave this untouched: it is owned and recomputed by the session.
+     */
+    val autoDimmed: Boolean = false,
 ) {
     /** Modes that can be selected right now (enabled on the light), in the light's order. */
     val enabledModes: List<Int> get() = declaredModes.filterValues { it }.keys.toList()

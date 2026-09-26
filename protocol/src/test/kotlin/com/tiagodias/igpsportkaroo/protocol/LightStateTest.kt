@@ -28,6 +28,12 @@ class LightStateTest {
     }
 
     @Test
+    fun `apply leaves autoDimmed alone`() {
+        val s = LightState(connected = true, mode = 1, autoDimmed = true).apply(LightUpdate(remainingMinutes = 235))
+        assertTrue(s.autoDimmed)
+    }
+
+    @Test
     fun `apply merges smart configs, auto brightness and output off`() {
         val s = LightState(connected = true, mode = 1)
             .apply(LightUpdate(smartConfigs = linkedMapOf(5 to 0, 3 to 1)))
