@@ -28,10 +28,10 @@ import timber.log.Timber
  * Turns link events into [LightState] and light commands into frames, for one paired light. [frameLog], when
  * set (debug builds), gets one line per received frame and what it parsed to.
  *
- * OFF stays off: while we have the light off, its auto sleep is paused ([LightState.autoSleepPaused]), since
- * asleep it would wake lit when moved. [sleepPaused] is the saved flag from a previous session (a restart, a
- * reboot) and [onSleepPausedChanged] saves each change; it runs outside the command lock and must not call back
- * into the session's commands.
+ * OFF stays off: while we have the light off, its auto sleep is paused ([SleepPause]), since asleep it would wake
+ * lit when moved. [sleepPause] is the saved state from a previous session (a restart, a reboot) and
+ * [onSleepPauseChanged] saves each change; it runs outside the command lock and must not call back into the
+ * session's commands. A save that throws is logged and tried again after the next command.
  */
 class LightSession(
     private val link: LightLink,
@@ -40,18 +40,21 @@ class LightSession(
     private val pollIntervalMs: Long = 60_000,
     private val now: () -> Long = System::currentTimeMillis,
     private val frameLog: ((String) -> Unit)? = null,
-    sleepPaused: Boolean = false,
-    private val onSleepPausedChanged: (Boolean) -> Unit = {},
+    sleepPause: SleepPause = SleepPause.NONE,
+    private val onSleepPauseChanged: (SleepPause) -> Unit = {},
 ) {
-    private val _state = MutableStateFlow(LightState(autoSleepPaused = sleepPaused))
+    private val _state = MutableStateFlow(LightState(autoSleepPaused = sleepPause == SleepPause.PAUSED))
     val state: StateFlow<LightState> = _state.asStateFlow()
 
-    /** Whether we paused the light's auto sleep; written under [commandLock], mirrored in [LightState.autoSleepPaused]. */
+    /**
+     * Where we stand with the light's auto sleep. Written under [commandLock] ([setSleepPause]); only
+     * [SleepPause.PAUSED] shows as [LightState.autoSleepPaused] ("paused while the light is off").
+     */
     @Volatile
-    private var pausedSleep = sleepPaused
+    private var sleepPause = sleepPause
     private val saveLock = Any()
-    /** The value [onSleepPausedChanged] last saved (or the one we started from). Guarded by [saveLock]. */
-    private var savedSleepPaused = sleepPaused
+    /** The value [onSleepPauseChanged] last saved (or the one we started from). Guarded by [saveLock]. */
+    private var savedSleepPause = sleepPause
 
     private val assembler = FrameAssembler()
     private val dimTracker = AutoDimTracker()
@@ -72,7 +75,7 @@ class LightSession(
         reconnecting = false
         dimTracker.reset()
         // The pause is kept (and stays saved): the next session resumes auto sleep once the light is on again.
-        _state.value = LightState(autoSleepPaused = pausedSleep)
+        _state.value = LightState(autoSleepPaused = sleepPause == SleepPause.PAUSED)
     }
 
     /**
@@ -118,7 +121,7 @@ class LightSession(
                     assembler.reset()
                     command {
                         val connected = _state.value.copy(connected = true)
-                        _state.value = if (pausedSleep) {
+                        _state.value = if (sleepPause == SleepPause.PAUSED) {
                             // It couldn't sleep, so it is most likely still in our OFF: its answer to the mode
                             // read-back below (its remembered mode) must not end that, like the echo after OFF.
                             offCommandAt = now()
@@ -126,6 +129,9 @@ class LightSession(
                         } else {
                             connected
                         }
+                        // The light had left OFF but never confirmed auto sleep back on (a frame dropped with the
+                        // link): switch it on again, without assuming the light is off.
+                        if (sleepPause == SleepPause.RESUMING) writeSmartConfig(SmartConfig.AUTO_SLEEP, on = true)
                     }
                     refreshAll()
                     poller?.cancel()
@@ -200,11 +206,11 @@ class LightSession(
      * Switches smart config [id] ([SmartConfig]) on or off, then reads the configs back. The field shows the
      * new status right away. False when not connected. Serialized on [commandLock].
      *
-     * The user's own switch: an auto sleep we paused becomes theirs again, so it is no longer resumed.
+     * The user's own switch: an auto sleep we paused (or are resuming) becomes theirs again, left as they set it.
      */
     fun setSmartConfig(id: Int, on: Boolean): Boolean = command {
         val readBack = writeSmartConfig(id, on) ?: return false
-        if (id == SmartConfig.AUTO_SLEEP) setPausedSleep(false)
+        if (id == SmartConfig.AUTO_SLEEP) setSleepPause(SleepPause.NONE)
         readBack
     }
 
@@ -228,29 +234,31 @@ class LightSession(
     /**
      * OFF stays off: switches the light's auto sleep off while we have the light off, when it is on. Asleep (after
      * a minute without motion) it stops advertising, and moving it wakes it lit in its last mode; kept awake, it
-     * stays off. Remembered, so [resumeSleep] switches it back on; never touched when the user had it off.
-     * Callers hold [commandLock].
+     * stays off. Remembered, so [resumeSleep] switches it back on; never touched when the user had it off. While a
+     * resume is still unconfirmed it is ours either way, so it is paused again. Callers hold [commandLock].
      */
     private fun pauseSleep() {
-        if (_state.value.smartConfigs[SmartConfig.AUTO_SLEEP] != SmartConfig.ON) return
+        val on = _state.value.smartConfigs[SmartConfig.AUTO_SLEEP] == SmartConfig.ON
+        if (!on && sleepPause != SleepPause.RESUMING) return
         // Only a write that went out counts: without it, the light's own setting is unchanged.
-        if (writeSmartConfig(SmartConfig.AUTO_SLEEP, on = false) != null) setPausedSleep(true)
+        if (writeSmartConfig(SmartConfig.AUTO_SLEEP, on = false) != null) setSleepPause(SleepPause.PAUSED)
     }
 
     /**
-     * The light left our OFF: switches the auto sleep [pauseSleep] paused back on. Idempotent. A write that isn't
-     * sent keeps the pause, so the next mode change (or the next session, via the saved flag) tries again.
-     * Callers hold [commandLock].
+     * The light left our OFF: switches the auto sleep [pauseSleep] paused back on, then waits for a smart-config
+     * report to confirm it ([onReport]). Until then it is [SleepPause.RESUMING], sent again on the next connect.
+     * Idempotent. A write the link refuses keeps the pause, so the next mode change tries again. Callers hold
+     * [commandLock].
      */
     private fun resumeSleep() {
-        if (!pausedSleep) return
-        if (writeSmartConfig(SmartConfig.AUTO_SLEEP, on = true) != null) setPausedSleep(false)
+        if (sleepPause != SleepPause.PAUSED) return
+        if (writeSmartConfig(SmartConfig.AUTO_SLEEP, on = true) != null) setSleepPause(SleepPause.RESUMING)
     }
 
     /** Callers hold [commandLock]; [command] saves the change once the lock is released. */
-    private fun setPausedSleep(paused: Boolean) {
-        pausedSleep = paused
-        _state.value = _state.value.copy(autoSleepPaused = paused)
+    private fun setSleepPause(pause: SleepPause) {
+        sleepPause = pause
+        _state.value = _state.value.copy(autoSleepPaused = pause == SleepPause.PAUSED)
     }
 
     /**
@@ -265,17 +273,22 @@ class LightSession(
         }
 
     /**
-     * Hands a changed [pausedSleep] to [onSleepPausedChanged]. Never under [commandLock]: saving may block (a
-     * first SharedPreferences read). A nested command skips it, and the outermost one saves once it has released
-     * the lock. [saveLock] orders the saves and each reads the latest value, so the last save always wins.
+     * Hands a changed [sleepPause] to [onSleepPauseChanged]. Never under [commandLock]: saving may block (a disk
+     * write). A nested command skips it, and the outermost one saves once it has released the lock. [saveLock]
+     * orders the saves and each reads the latest value, so the last save always wins. A save that throws is
+     * logged, never thrown at the command's caller (the link collector, the UI thread), and tried again next time.
      */
     private fun saveSleepPause() {
         if (Thread.holdsLock(commandLock)) return
         synchronized(saveLock) {
-            val paused = pausedSleep
-            if (paused == savedSleepPaused) return
-            savedSleepPaused = paused
-            onSleepPausedChanged(paused)
+            val pause = sleepPause
+            if (pause == savedSleepPause) return
+            try {
+                onSleepPauseChanged(pause)
+                savedSleepPause = pause
+            } catch (e: Exception) {
+                Timber.e(e, "Saving the auto-sleep pause (%s) failed", pause)
+            }
         }
     }
 
@@ -381,13 +394,18 @@ class LightSession(
 
     /**
      * Applies one report from the light. When it ends "off" ([applyReport]; e.g. the light's own button), the
-     * light has left our OFF, so the auto sleep we paused goes back on. Callers hold [commandLock].
+     * light has left our OFF, so the auto sleep we paused goes back on; a smart-config report showing it on
+     * confirms that. Callers hold [commandLock].
      */
     private fun onReport(update: LightUpdate) {
         val before = _state.value
         val after = applyReport(before, update)
         _state.value = after
         if (before.poweredOff && !after.poweredOff) resumeSleep()
+        // Only a report of auto sleep on ends a resume: a queued write can still be dropped with the link.
+        if (sleepPause == SleepPause.RESUMING && update.smartConfigs?.get(SmartConfig.AUTO_SLEEP) == SmartConfig.ON) {
+            setSleepPause(SleepPause.NONE)
+        }
     }
 
     /**
