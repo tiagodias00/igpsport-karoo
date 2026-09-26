@@ -113,4 +113,27 @@ class CustomEditorTest {
         assertFalse(editor.canPreview)
         assertFalse(editor.canRestore)
     }
+
+    @Test
+    fun `offers no control for a pattern the protocol doesn't define`() {
+        val odd = c1.copy(
+            selected = 5,
+            patterns = listOf(c1.patterns[0], CustomPattern(5, listOf(CustomLight(CustomMode.MAIN, 50)))),
+        )
+        val editor = CustomEditor.from(vs1200s.apply(LightUpdate(customMode = odd)), 64, null)
+        assertEquals(listOf(CustomEditor.PatternChoice(CustomMode.STEADY, "Steady", false)), editor.patterns)
+        assertTrue(editor.sliders.isEmpty())
+    }
+
+    @Test
+    fun `restore is not offered for another slot's snapshot`() {
+        assertFalse(CustomEditor.from(known, 64, c1.copy(mode = 65, selected = CustomMode.FLASH)).canRestore)
+    }
+
+    @Test
+    fun `one slider per channel`() {
+        val twice = c1.copy(patterns = listOf(CustomPattern(CustomMode.STEADY, listOf(CustomLight(CustomMode.MAIN, 30), CustomLight(CustomMode.MAIN, 40)))))
+        val editor = CustomEditor.from(vs1200s.apply(LightUpdate(customMode = twice)), 64, null)
+        assertEquals(listOf(CustomEditor.Slider(Key.Brightness(CustomMode.MAIN), "Brightness", 5..100, 30, "%")), editor.sliders)
+    }
 }

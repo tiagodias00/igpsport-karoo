@@ -69,6 +69,9 @@ data class LightState(
     fun apply(update: LightUpdate): LightState {
         val newMode = update.mode
         val customs = update.customMode?.let { customModes + (it.mode to it) } ?: customModes
+        // A new mode is classified as it arrives. So is the playing slot when its config arrives: it is read
+        // after the mode on connect, and a pattern switch brings no mode report.
+        val classify = newMode ?: mode?.takeIf { it == update.customMode?.mode }
         return copy(
             mode = newMode ?: mode,
             batteryPercent = update.batteryPercent ?: batteryPercent,
@@ -78,8 +81,8 @@ data class LightState(
             auxBatteryPercent = update.auxBatteryPercent ?: auxBatteryPercent,
             outputOff = update.outputOff ?: outputOff,
             customModes = customs,
-            lastSteadyMode = newMode?.takeIf { LightModes.isSteady(it, customs) } ?: lastSteadyMode,
-            lastFlashMode = newMode?.takeIf { LightModes.isFlashing(it, customs) } ?: lastFlashMode,
+            lastSteadyMode = classify?.takeIf { LightModes.isSteady(it, customs) } ?: lastSteadyMode,
+            lastFlashMode = classify?.takeIf { LightModes.isFlashing(it, customs) } ?: lastFlashMode,
         )
     }
 }

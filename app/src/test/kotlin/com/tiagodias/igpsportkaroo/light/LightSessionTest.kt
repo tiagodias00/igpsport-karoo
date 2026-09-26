@@ -999,6 +999,16 @@ class LightSessionTest {
     }
 
     @Test
+    fun `switching the playing custom slot to flash moves it to the flash level at once`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, customReplySteady, stateMode(64))
+        assertTrue(session.changeCustomMode(64, CustomChange.Pattern(CustomMode.FLASH))) // no mode report follows
+        assertEquals(64, session.state.value.flashLevel)
+        assertEquals(1, session.state.value.steadyLevel)
+    }
+
+    @Test
     fun `a stale read-back corrects the optimistic change`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)

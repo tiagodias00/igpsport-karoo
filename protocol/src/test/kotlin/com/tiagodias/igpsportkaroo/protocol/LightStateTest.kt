@@ -122,4 +122,35 @@ class LightStateTest {
         assertEquals("C1 FLASH", edited.labelOf(64))
         assertEquals("C1", edited.shortLabelOf(64))
     }
+
+    @Test
+    fun `a config that arrives after the mode reclassifies the playing slot`() {
+        // Connect order: the mode is read before the custom configs, so 64 first counts as steady.
+        val beforeConfig = vs1200s.copy(poweredOff = true, autoDimmed = true).apply(LightUpdate(mode = 1)).apply(LightUpdate(mode = 64))
+        assertEquals(64, beforeConfig.lastSteadyMode)
+        val s = beforeConfig.apply(LightUpdate(customMode = c1Steady.copy(selected = CustomMode.FLASH)))
+        assertEquals(64, s.lastFlashMode)
+        assertEquals(64, s.flashLevel)
+        assertEquals(1, s.steadyLevel) // 64 no longer steady: the brightest steady level
+        assertTrue(s.poweredOff) // apply still leaves these alone
+        assertTrue(s.autoDimmed)
+    }
+
+    @Test
+    fun `switching the playing slot's pattern moves it between the steady and flash levels`() {
+        val steady = vs1200s.apply(LightUpdate(customMode = c1Steady)).apply(LightUpdate(mode = 64))
+        val flashing = steady.apply(LightUpdate(customMode = c1Steady.copy(selected = CustomMode.FLASH)))
+        assertEquals(64, flashing.flashLevel)
+        val back = flashing.apply(LightUpdate(customMode = c1Steady))
+        assertEquals(64, back.steadyLevel)
+        assertEquals(64, back.lastFlashMode) // kept, but no longer flashing: FLASH falls back to its first level
+        assertEquals(4, back.flashLevel)
+    }
+
+    @Test
+    fun `a config for a slot that isn't playing leaves the last levels alone`() {
+        val s = vs1200s.apply(LightUpdate(mode = 5)).apply(LightUpdate(customMode = c1Steady.copy(selected = CustomMode.FLASH)))
+        assertEquals(5, s.lastFlashMode)
+        assertNull(s.lastSteadyMode)
+    }
 }

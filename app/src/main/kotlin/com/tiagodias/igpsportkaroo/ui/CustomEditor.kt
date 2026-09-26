@@ -20,7 +20,7 @@ data class CustomEditor(
     val sliders: List<Slider>,
     val canPreview: Boolean,
     /**
-     * A snapshot exists, the slot differs from it, and every write back to it is in the app's ranges (the light
+     * A snapshot of this slot exists, the slot differs from it, and every write back to it is in the app's ranges (the light
      * stores anything, e.g. 101 %, and such a snapshot can't be restored).
      */
     val canRestore: Boolean,
@@ -47,14 +47,15 @@ data class CustomEditor(
             val modes = state.declaredModes.keys.filter { it in CustomMode.SLOTS }
             val slot = requestedSlot?.takeIf { it in modes } ?: modes.firstOrNull()
             val config = slot?.let { state.customModes[it] }
-            val active = config?.active
-            val lights = active?.lights.orEmpty().sortedByDescending { it.lightNum }
+            // A pattern the protocol doesn't define gets no controls: every write to it would be rejected.
+            val active = config?.active?.takeIf { it.subtype in CustomMode.SUBTYPES }
+            val lights = active?.lights.orEmpty().distinctBy { it.lightNum }.sortedByDescending { it.lightNum }
             val sliders = buildList {
                 lights.forEach { light ->
                     val label = if (lights.size == 1) "Brightness" else CHANNEL_LABELS[light.lightNum] ?: "Light ${light.lightNum}"
                     add(Slider(Key.Brightness(light.lightNum), label, BRIGHTNESS, light.pct.coerceIn(BRIGHTNESS), "%"))
                 }
-                if (config?.selected == CustomMode.FLASH && active != null) {
+                if (active != null && active.subtype == CustomMode.FLASH) {
                     add(Slider(Key.Cycle, "Cycle", CustomMode.CYCLE_SECONDS, (active.cycleSeconds ?: 0).coerceIn(CustomMode.CYCLE_SECONDS), " s"))
                     add(Slider(Key.Ratio, "Lighting time", CustomMode.RATIO_PERCENT, (active.ratioPercent ?: 0).coerceIn(CustomMode.RATIO_PERCENT), "%"))
                 }
@@ -63,11 +64,11 @@ data class CustomEditor(
                 slots = modes.map { Slot(it, "CUSTOM ${it - CustomMode.SLOTS.first + 1}") },
                 slot = slot,
                 reading = slot != null && config == null,
-                patterns = config?.patterns.orEmpty().sortedBy { it.subtype }
+                patterns = config?.patterns.orEmpty().filter { it.subtype in CustomMode.SUBTYPES }.sortedBy { it.subtype }
                     .map { PatternChoice(it.subtype, PATTERN_LABELS[it.subtype] ?: "Pattern ${it.subtype}", it.subtype == config?.selected) },
                 sliders = sliders,
                 canPreview = state.connected && config != null,
-                canRestore = state.connected && config != null && original != null && restorable(config, original),
+                canRestore = state.connected && config != null && original != null && original.mode == slot && restorable(config, original),
             )
         }
 

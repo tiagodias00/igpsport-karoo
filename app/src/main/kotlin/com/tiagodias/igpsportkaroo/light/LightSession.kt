@@ -197,7 +197,8 @@ class LightSession(
         val current = _state.value.customModes[mode] ?: return false
         val frame = customFrames(mode, listOf(change))?.single() ?: return false
         if (!link.send(frame)) return false
-        _state.value = _state.value.let { it.copy(customModes = it.customModes + (mode to current.applied(change))) }
+        // Through apply(), so a pattern switch on the playing slot moves it between SOLID and FLASH at once.
+        _state.value = _state.value.apply(LightUpdate(customMode = current.applied(change)))
         reselectIfPlaying(mode)
         return link.send(IgpsProtocol.readCustomMode(mode))
     }
@@ -217,7 +218,7 @@ class LightSession(
         val frames = customFrames(target.mode, changes) ?: return false
         for (frame in frames) if (!link.send(frame)) return false
         val restored = changes.fold(current) { c, ch -> c.applied(ch) }
-        _state.value = _state.value.let { it.copy(customModes = it.customModes + (target.mode to restored)) }
+        _state.value = _state.value.apply(LightUpdate(customMode = restored))
         reselectIfPlaying(target.mode)
         return link.send(IgpsProtocol.readCustomMode(target.mode))
     }
