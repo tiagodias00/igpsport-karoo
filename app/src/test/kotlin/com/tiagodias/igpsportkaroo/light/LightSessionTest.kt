@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -418,6 +419,25 @@ class LightSessionTest {
     }
 
     @Test
+    fun `a disconnect forgets the dimming reference, so a reconnect does not claim dimmed right away`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1)) // AUTO_LIGHT on, HIGH
+        report(link, vs1200sRunTime155)
+        report(link, vs1200sRunTime235)
+        assertTrue(session.state.value.autoDimmed)
+
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        report(link, vs1200sDeclared, vs1200sSmartConfigs, stateMode(1)) // AUTO_LIGHT on, HIGH again
+        // Without the pre-disconnect reference (155) this would look dimmed on the spot; it must not.
+        report(link, vs1200sRunTime235)
+        assertFalse(session.state.value.autoDimmed)
+    }
+
+    @Test
     fun `setSmartConfig writes, updates optimistically and reads back`() = runTest {
         val link = FakeLink()
         val session = connectedSession(link)
@@ -646,5 +666,43 @@ class LightSessionTest {
         }
         assertEquals(iterations, setMode1Count)
         assertEquals(iterations, setModeOffCount)
+    }
+
+    @Test
+    fun `auto dimmed stays consistent across interleaved commands and reports`() = runBlocking {
+        val link = FakeLink()
+        val session = LightSession(link, "AA:BB:CC:DD:EE:FF", this)
+        session.start()
+        yield() // let runLink() subscribe to link.events before anything is emitted (no replay: it would be lost)
+        link.events.tryEmit(LinkEvent.Connected)
+        link.events.tryEmit(LinkEvent.Fragment(vs1200sDeclared))
+        link.events.tryEmit(LinkEvent.Fragment(vs1200sSmartConfigs)) // AUTO_LIGHT on
+        link.events.tryEmit(LinkEvent.Fragment(stateMode(1))) // HIGH
+        yield() // let the collector apply the setup above before the concurrent traffic starts
+        assertEquals(1, session.state.value.mode)
+        assertTrue(session.state.value.autoLightOn)
+
+        // Real threads hammering both writer paths at once (link-collector reports vs. a command's optimistic
+        // update): before the fix, dimTracker.update() ran inside a MutableStateFlow.update {} CAS retry loop,
+        // so a discarded attempt could still mutate it. Now every _state write (and every dimTracker call) is
+        // a single plain assignment made while holding commandLock, so this must neither throw/deadlock nor
+        // corrupt state the concurrent traffic never touches.
+        val iterations = 200
+        val commands = launch(Dispatchers.Default) {
+            repeat(iterations) { session.setSmartConfig(SmartConfig.AUTO_LIGHT, on = true) }
+        }
+        val reports = launch(Dispatchers.Default) {
+            repeat(iterations) { i ->
+                link.events.tryEmit(LinkEvent.Fragment(if (i % 2 == 0) vs1200sRunTime155 else vs1200sRunTime235))
+            }
+        }
+        commands.join()
+        reports.join()
+
+        assertEquals(1, session.state.value.mode)
+        assertTrue(session.state.value.autoLightOn)
+        // start() launched an infinite collector job (runLink() never completes on its own): stop() cancels it
+        // so this runBlocking block — which otherwise waits for every child coroutine — can actually return.
+        session.stop()
     }
 }

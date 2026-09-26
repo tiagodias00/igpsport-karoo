@@ -17,7 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -99,7 +98,7 @@ class LightSession(
             when (event) {
                 LinkEvent.Connected -> {
                     assembler.reset()
-                    _state.update { it.copy(connected = true) }
+                    synchronized(commandLock) { _state.value = _state.value.copy(connected = true) }
                     refreshAll()
                     poller?.cancel()
                     poller = launch {
@@ -112,12 +111,16 @@ class LightSession(
                 }
                 LinkEvent.Disconnected -> {
                     poller?.cancel()
-                    _state.update { it.copy(connected = false) }
+                    synchronized(commandLock) {
+                        // The next connection starts a fresh "full" reference: an old one might no longer apply.
+                        dimTracker.reset()
+                        _state.value = _state.value.copy(connected = false)
+                    }
                 }
                 is LinkEvent.Fragment -> assembler.push(event.bytes).forEach { frame ->
                     val update = IgpsProtocol.parseFrame(frame)
                     frameLog?.invoke("rx ${Hex.encode(frame)} -> $update")
-                    update?.let { _state.update { state -> applyReport(state, it) } }
+                    update?.let { u -> synchronized(commandLock) { _state.value = applyReport(_state.value, u) } }
                 }
             }
         }
@@ -135,7 +138,7 @@ class LightSession(
             if (!link.send(IgpsProtocol.setMode(LightModes.OFF))) return false
             // No read-back: the light would answer with its remembered mode, never 0.
             offCommandAt = now()
-            _state.update { it.copy(poweredOff = true) }
+            _state.value = _state.value.copy(poweredOff = true)
             return true
         }
         if (_state.value.declaredModes[mode] == false) {
@@ -146,7 +149,7 @@ class LightSession(
         offCommandAt = null
         // Optimistic: the field shows the new mode right away; the read-back below confirms or corrects it.
         // Applied like a report, so the last steady / flash level is remembered too.
-        _state.update { it.apply(LightUpdate(mode = mode)).copy(poweredOff = false).withAutoDimmed() }
+        _state.value = _state.value.apply(LightUpdate(mode = mode)).copy(poweredOff = false).withAutoDimmed()
         // The light only ACKs writes: read the mode back so the UI shows what it really did.
         return link.send(IgpsProtocol.readCurrentMode())
     }
@@ -168,10 +171,11 @@ class LightSession(
         if (!link.send(IgpsProtocol.setSmartConfig(id, status))) return false
         // Without auto light the output is never switched off for daylight, so a stale "output off" goes too.
         val clearsOutputOff = id == SmartConfig.AUTO_LIGHT && !on
-        _state.update {
-            it.copy(smartConfigs = it.smartConfigs + (id to status), outputOff = it.outputOff && !clearsOutputOff)
-                .withAutoDimmed()
-        }
+        val current = _state.value
+        _state.value = current.copy(
+            smartConfigs = current.smartConfigs + (id to status),
+            outputOff = current.outputOff && !clearsOutputOff,
+        ).withAutoDimmed()
         return link.send(IgpsProtocol.readSmartConfigs())
     }
 
@@ -217,10 +221,13 @@ class LightSession(
         selectMode(mode)
     }
 
-    /** A mode report ends "off" unless it is the echo the light sends right after our OFF command. */
+    /**
+     * A mode report ends "off" unless it is the echo the light sends right after our OFF command. Callers must
+     * already hold [commandLock]: this reads [offCommandAt] and, via [withAutoDimmed], mutates [dimTracker].
+     */
     private fun applyReport(state: LightState, update: LightUpdate): LightState {
         val applied = state.apply(update)
-        val settling = synchronized(commandLock) { offCommandAt?.let { now() - it < OFF_SETTLE_MS } ?: false }
+        val settling = offCommandAt?.let { now() - it < OFF_SETTLE_MS } ?: false
         val powered =
             if (state.poweredOff && update.mode != null && !settling) applied.copy(poweredOff = false) else applied
         return powered.withAutoDimmed()
@@ -228,11 +235,14 @@ class LightSession(
 
     /**
      * Recomputes [LightState.autoDimmed] from the current mode / auto light / remaining time via [dimTracker].
-     * [dimTracker] is mutable and not otherwise thread-safe, so its access is guarded by [commandLock], like
-     * [offCommandAt] above: this can run from the link's collector as well as from a command call.
+     *
+     * Callers must already hold [commandLock] and must assign the result directly to `_state.value`, never
+     * from inside a `_state.update { }` transform: [dimTracker] is mutable, and `update {}`'s compare-and-swap
+     * retry loop can invoke its lambda more than once under contention, so a discarded attempt would still
+     * mutate the tracker's reference and leave it transiently wrong.
      */
     private fun LightState.withAutoDimmed(): LightState =
-        copy(autoDimmed = synchronized(commandLock) { dimTracker.update(mode, autoLightOn, remainingMinutes) })
+        copy(autoDimmed = dimTracker.update(mode, autoLightOn, remainingMinutes))
 
     private fun refreshAll() {
         link.send(IgpsProtocol.readSupportedModes())
