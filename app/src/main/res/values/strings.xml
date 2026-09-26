@@ -28,12 +28,11 @@
     <string name="feature_auto_sleep_subtitle">Sleeps when not moving</string>
     <string name="feature_auto_low">Auto dim when stopped</string>
     <string name="feature_auto_lowbat">Low-battery saving</string>
-    <string name="feature_sync_off">Turn off with bike computer</string>
-    <string name="feature_sync_off_subtitle">Light switches off when the bike computer disconnects. May also switch off on brief Bluetooth drops — leave off unless you want this.</string>
     <string name="section_ride">Ride</string>
-    <string name="settings_ride_start">When a ride starts, set light to</string>
+    <string name="settings_ride_start">When a ride starts, turn the light on in</string>
     <string name="ride_start_auto">AUTO</string>
     <string name="none">Don\'t change</string>
+    <string name="off_at_ride_end">Turn off the light when the ride ends</string>
     <string name="low_battery_alerts" formatted="false">Low battery alerts (20% and 10%)</string>
     <string name="open_controls">Open light controls</string>
     <string name="control_title">Light controls</string>

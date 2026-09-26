@@ -217,6 +217,16 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
                 // Manual: with auto light on (the VS1200S default) a plain mode change would do nothing visible.
                 is Command.SelectMode -> whenLightReady(command) { it.selectManualMode(command.mode) }
                 Command.SelectAuto -> whenLightReady(command) { it.selectAuto() }
+                Command.TurnOff -> {
+                    // Ride end: don't wait for the light like whenLightReady does for a ride start, only act if
+                    // it's connected right now.
+                    val session = LightHub.session?.takeIf { it.state.value.connected }
+                    if (session == null) {
+                        Timber.w("%s dropped: the light is not connected", command)
+                    } else {
+                        Timber.i("%s (sent=%b)", command, session.selectMode(LightModes.OFF))
+                    }
+                }
                 is Command.LowBatteryAlert -> {
                     Timber.i("Low battery alert: %d%%", command.percent)
                     karooSystem.dispatch(

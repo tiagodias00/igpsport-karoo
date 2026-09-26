@@ -15,7 +15,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("low_battery_alerts", true)
         set(value) { prefs.edit().putBoolean("low_battery_alerts", value).apply() }
 
-    fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts)
+    var offAtRideEnd: Boolean
+        get() = prefs.getBoolean("off_at_ride_end", true)
+        set(value) { prefs.edit().putBoolean("off_at_ride_end", value).apply() }
+
+    fun automation(): AutomationSettings = AutomationSettings(rideStart, lowBatteryAlerts, offAtRideEnd)
 
     companion object {
         /** The VS1200S's declared modes (HIGH, MID, FLASH HI, FLASH LO, CUSTOM 1) plus OFF. */

@@ -7,7 +7,9 @@ import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 /**
  * The app page's "Light features" switches: which of the light's [SmartConfig]s to show, in what order, labelled
  * how. LUMEN_VARY (speed-based brightness) is left out: it needs speed from an iGPSPORT computer, so it does
- * nothing on a Karoo; the light's own setting is left as it is.
+ * nothing on a Karoo; the light's own setting is left as it is. SYNC_OFF is also left out: the Ride section's
+ * "turn off the light when the ride ends" switch replaces it, since the light's own SYNC_OFF did not reliably
+ * switch off on a Karoo link drop; the light's own setting is left as it is too.
  */
 object SmartFeatures {
     data class Feature(val id: Int, @StringRes val label: Int, @StringRes val subtitle: Int?)
@@ -17,7 +19,6 @@ object SmartFeatures {
         Feature(SmartConfig.AUTO_SLEEP, R.string.feature_auto_sleep, R.string.feature_auto_sleep_subtitle),
         Feature(SmartConfig.AUTO_LOW, R.string.feature_auto_low, null),
         Feature(SmartConfig.AUTO_LOWBAT, R.string.feature_auto_lowbat, null),
-        Feature(SmartConfig.SYNC_OFF, R.string.feature_sync_off, R.string.feature_sync_off_subtitle),
     )
 
     /** The features the light declares in [configs] (id to status), in the app page's order; unknown ids are hidden. */

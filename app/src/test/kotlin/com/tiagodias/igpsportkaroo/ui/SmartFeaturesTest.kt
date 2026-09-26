@@ -13,10 +13,7 @@ class SmartFeaturesTest {
     @Test
     fun `features follow the app page order, not the light's`() {
         assertEquals(
-            listOf(
-                SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP,
-                SmartConfig.AUTO_LOW, SmartConfig.AUTO_LOWBAT, SmartConfig.SYNC_OFF,
-            ),
+            listOf(SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP, SmartConfig.AUTO_LOW, SmartConfig.AUTO_LOWBAT),
             SmartFeatures.visible(vs1200s).map { it.id },
         )
     }
@@ -43,7 +40,7 @@ class SmartFeaturesTest {
     fun `each feature has its own label, and the ones that need explaining a subtitle`() {
         val features = SmartFeatures.visible(vs1200s)
         assertEquals(features.size, features.map { it.label }.toSet().size)
-        val explained = setOf(SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP, SmartConfig.SYNC_OFF)
+        val explained = setOf(SmartConfig.AUTO_LIGHT, SmartConfig.AUTO_SLEEP)
         features.forEach { if (it.id in explained) assertNotNull(it.subtitle) else assertNull(it.subtitle) }
     }
 }

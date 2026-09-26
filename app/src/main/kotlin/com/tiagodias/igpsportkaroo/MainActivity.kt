@@ -170,6 +170,7 @@ class MainActivity : Activity() {
                 }
             },
         )
+        content.addView(settingSwitch(R.string.off_at_ride_end, settings.offAtRideEnd) { settings.offAtRideEnd = it })
         content.addView(settingSwitch(R.string.low_battery_alerts, settings.lowBatteryAlerts) { settings.lowBatteryAlerts = it })
     }
 

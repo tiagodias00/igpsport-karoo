@@ -3,15 +3,17 @@ package com.tiagodias.igpsportkaroo.automation
 import com.tiagodias.igpsportkaroo.automation.Command.LowBatteryAlert
 import com.tiagodias.igpsportkaroo.automation.Command.SelectAuto
 import com.tiagodias.igpsportkaroo.automation.Command.SelectMode
+import com.tiagodias.igpsportkaroo.automation.Command.TurnOff
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class RideAutomationTest {
-    private var settings = AutomationSettings(RideStart.Mode(1), lowBatteryAlerts = true)
+    private var settings = AutomationSettings(RideStart.Mode(1), lowBatteryAlerts = true, offAtRideEnd = true)
     private val automation = RideAutomation { settings }
 
     @Test
     fun `ride start selects the configured mode once`() {
+        settings = settings.copy(offAtRideEnd = false) // ride end is covered separately below
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false)) // consumer registered while idle
         assertEquals(listOf(SelectMode(1)), automation.onRideState(isRecording = true))
         // Resumed / still recording: nothing new.
@@ -30,6 +32,7 @@ class RideAutomationTest {
 
     @Test
     fun `a ride already recording at the first event is not a ride start`() {
+        settings = settings.copy(offAtRideEnd = false) // ride end is covered separately below
         // The extension restarted mid-ride: the rider may have changed the light since the real start.
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
@@ -42,6 +45,36 @@ class RideAutomationTest {
         settings = settings.copy(rideStart = RideStart.None)
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false))
         assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `ride end turns the light off when enabled`() {
+        automation.onRideState(isRecording = false) // primed (idle)
+        automation.onRideState(isRecording = true) // ride start
+        assertEquals(listOf(TurnOff), automation.onRideState(isRecording = false)) // ride end
+    }
+
+    @Test
+    fun `ride end does nothing when disabled`() {
+        settings = settings.copy(offAtRideEnd = false)
+        automation.onRideState(isRecording = false)
+        automation.onRideState(isRecording = true)
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false))
+    }
+
+    @Test
+    fun `pausing is not a ride end`() {
+        automation.onRideState(isRecording = false)
+        automation.onRideState(isRecording = true) // ride start
+        // Paused rides are reported as still recording, so this is not a recording -> idle transition.
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = true))
+    }
+
+    @Test
+    fun `first event after restart does not turn off`() {
+        // The extension restarted right after the ride ended: the first event reports idle, but it must only
+        // record the state (same priming rule as ride start).
+        assertEquals(emptyList<Command>(), automation.onRideState(isRecording = false))
     }
 
     @Test
