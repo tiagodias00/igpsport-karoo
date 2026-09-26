@@ -30,6 +30,7 @@ import io.hammerhead.karooext.models.ReleaseBluetooth
 import io.hammerhead.karooext.models.RequestBluetooth
 import io.hammerhead.karooext.models.RideState
 import io.hammerhead.karooext.models.SystemNotification
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,7 +46,10 @@ import java.util.Collections
 class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
 
     private lateinit var karooSystem: KarooSystemService
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Stray failures in any child are logged and contained so they can't take the extension process down. */
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> Timber.e(e, "Uncaught coroutine failure") },
+    )
 
     /** The per-connectDevice loop translating session.state into DeviceEvents; owned the same way as [LightHub.session]. */
     @Volatile

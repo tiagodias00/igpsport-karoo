@@ -15,7 +15,10 @@ import timber.log.Timber
 class BleScanner(private val context: Context) {
     data class Seen(val address: String, val name: String?, val serviceUuids: List<String>, val rssi: Int)
 
-    /** Unfiltered scan: the light doesn't advertise its UART service, so matching happens in [ScanMatch]. */
+    /**
+     * Unfiltered scan: the VS1200S advertises its UART service but the VS1800S doesn't, so matching happens in
+     * [ScanMatch] (advert marker or model name). Completes, instead of throwing, when the scan can't start or fails.
+     */
     fun scan(): Flow<Seen> = callbackFlow {
         val scanner = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)
             ?.adapter?.bluetoothLeScanner
@@ -39,10 +42,19 @@ class BleScanner(private val context: Context) {
 
             override fun onScanFailed(errorCode: Int) {
                 Timber.w("BLE scan failed: %d", errorCode)
+                close()
             }
         }
         // BALANCED, not LOW_LATENCY: aggressive scans starve the Karoo's other sensor links.
-        scanner.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), callback)
+        try {
+            scanner.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), callback)
+        } catch (e: SecurityException) {
+            Timber.w(e, "BLE scan not permitted")
+            close()
+        } catch (e: IllegalStateException) {
+            Timber.w(e, "BLE scan could not start (Bluetooth turned off?)")
+            close()
+        }
         awaitClose { runCatching { scanner.stopScan(callback) } }
     }
 }
