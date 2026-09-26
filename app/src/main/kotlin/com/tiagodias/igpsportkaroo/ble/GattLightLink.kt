@@ -15,6 +15,7 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.SystemClock
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
@@ -97,6 +98,8 @@ class GattLightLink(private val context: Context) : LightLink {
         val attempt = AtomicInteger(0)
         val scanCallbackRef = AtomicReference<ScanCallback?>(null)
         val pendingWriteChar = AtomicReference<BluetoothGattCharacteristic?>(null)
+        // When the current search for the light began (elapsedRealtime); null while connected. Guarded by [lock].
+        var searchStartedAt: Long? = null
         var startConnect: () -> Unit = {}
 
         fun scheduleRetry() {
@@ -112,8 +115,9 @@ class GattLightLink(private val context: Context) : LightLink {
             override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
                 when (newState) {
                     BluetoothProfile.STATE_CONNECTED -> {
-                        Timber.i("GATT connected (status=%d); discovering services", status)
-                        g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                        // HIGH only for the setup round trips; dropped to LOW_POWER once notifications are on.
+                        val high = g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                        Timber.i("GATT connected (status=%d, high priority=%b); discovering services", status, high)
                         if (!g.discoverServices()) {
                             Timber.w("discoverServices rejected; dropping the connection")
                             g.disconnect()
@@ -161,9 +165,14 @@ class GattLightLink(private val context: Context) : LightLink {
                 }
                 synchronized(lock) {
                     if (gatt !== g) return // torn down or timed out meanwhile
+                    // The link only carries a 60 s poll and taps, so a long connection interval saves Karoo and
+                    // light power. Requested before writeChar is published, so no chunk write is in flight yet.
+                    val lowPower = g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER)
+                    Timber.i("Setup done; low-power connection priority requested: %b", lowPower)
                     writeChar = pendingWriteChar.getAndSet(null)
                     setupWatchdog?.cancel()
                     setupWatchdog = null
+                    searchStartedAt = null // connected: the next search starts again in BALANCED
                 }
                 attempt.set(0)
                 trySend(LinkEvent.Connected)
@@ -248,20 +257,36 @@ class GattLightLink(private val context: Context) : LightLink {
                     scheduleRetry()
                 }
             }
-            scanCallbackRef.getAndSet(scanCallback)?.let { old -> runCatching { scanner.stopScan(old) } }
-            try {
-                scanner.startScan(
-                    listOf(ScanFilter.Builder().setDeviceAddress(address).build()),
-                    ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(),
-                    scanCallback,
-                )
-            } catch (e: IllegalStateException) {
-                Timber.w(e, "Connect scan could not start (Bluetooth turned off?); retrying")
-                scanCallbackRef.compareAndSet(scanCallback, null)
-                scheduleRetry()
-                return@start
+            // Same lock as teardown's `active` flip: awaitClose either stops this scan or it never starts.
+            synchronized(lock) {
+                if (!active.get()) return@start
+                // Duty cycle: after LOW_POWER_SCAN_AFTER_MS without finding the light, restarted scans go low power.
+                val now = SystemClock.elapsedRealtime()
+                val searchAge = now - (searchStartedAt ?: now.also { searchStartedAt = it })
+                val lowPowerScan = searchAge >= LOW_POWER_SCAN_AFTER_MS
+                val scanMode = if (lowPowerScan) ScanSettings.SCAN_MODE_LOW_POWER else ScanSettings.SCAN_MODE_BALANCED
+                scanCallbackRef.getAndSet(scanCallback)?.let { old -> runCatching { scanner.stopScan(old) } }
+                val failure = try {
+                    scanner.startScan(
+                        listOf(ScanFilter.Builder().setDeviceAddress(address).build()),
+                        ScanSettings.Builder().setScanMode(scanMode).build(),
+                        scanCallback,
+                    )
+                    null
+                } catch (e: IllegalStateException) {
+                    e // Bluetooth turned off
+                } catch (e: SecurityException) {
+                    e // Bluetooth permission revoked
+                }
+                if (failure != null) {
+                    Timber.w(failure, "Connect scan could not start (Bluetooth off or permission revoked?); retrying")
+                    scanCallbackRef.compareAndSet(scanCallback, null)
+                    scheduleRetry()
+                    return@start
+                }
+                Timber.d("Scanning for %s (low power=%b, searching for %d ms)", address, lowPowerScan, searchAge)
+                armScanWatchdog(scanner, scanCallback)
             }
-            armScanWatchdog(scanner, scanCallback)
         }
         startConnect()
 
@@ -286,5 +311,8 @@ class GattLightLink(private val context: Context) : LightLink {
 
         /** Restart an unanswered connect scan this often: one startScan per 30 s stays under Android's 5-per-30 s throttle. */
         const val SCAN_RESTART_MS = 30_000L
+
+        /** Switch the connect scan from BALANCED to LOW_POWER once a search has gone this long without finding the light. */
+        const val LOW_POWER_SCAN_AFTER_MS = 120_000L
     }
 }
