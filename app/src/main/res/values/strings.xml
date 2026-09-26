@@ -19,7 +19,7 @@
     <string name="settings_ride_start">When a ride starts</string>
     <string name="ride_start_label">Set light to</string>
     <string name="none">Don\'t change</string>
-    <string name="low_battery_alerts">Low battery alerts (20% and 10%)</string>
+    <string name="low_battery_alerts" formatted="false">Low battery alerts (20% and 10%)</string>
     <string name="cc_shortcut">Control Center shortcut (experimental)</string>
     <string name="open_controls">Open light controls</string>
     <string name="control_title">Light controls</string>

@@ -6,6 +6,7 @@ import com.tiagodias.igpsportkaroo.ble.ScanMatch
 import com.tiagodias.igpsportkaroo.light.LightHub
 import com.tiagodias.igpsportkaroo.light.LightSession
 import com.tiagodias.igpsportkaroo.ui.LightBatteryDataType
+import com.tiagodias.igpsportkaroo.ui.LightFieldDataType
 import io.hammerhead.karooext.KarooSystemService
 import io.hammerhead.karooext.extension.KarooExtension
 import io.hammerhead.karooext.internal.Emitter
@@ -41,7 +42,7 @@ class IgpsExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     @Volatile
     private var deviceJob: Job? = null
 
-    override val types by lazy { listOf(LightBatteryDataType(extension)) }
+    override val types by lazy { listOf(LightFieldDataType(extension), LightBatteryDataType(extension)) }
 
     override fun onCreate() {
         super.onCreate()

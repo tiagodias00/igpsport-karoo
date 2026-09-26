@@ -9,6 +9,7 @@ import com.tiagodias.igpsportkaroo.protocol.LightState
 import com.tiagodias.igpsportkaroo.protocol.LightUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,41 +33,60 @@ class LightSession(
     private val commandLock = Any()
     private var offCommandAt: Long? = null
 
-    fun start() {
+    fun start(): Unit = synchronized(commandLock) {
         if (job != null) return
-        job = scope.launch {
-            var poller: Job? = null
-            link.connect(address).collect { event ->
-                when (event) {
-                    LinkEvent.Connected -> {
-                        assembler.reset()
-                        _state.update { it.copy(connected = true) }
-                        refreshAll()
-                        poller?.cancel()
-                        poller = launch {
-                            while (true) {
-                                delay(pollIntervalMs)
-                                link.send(IgpsProtocol.readBattery())
-                                link.send(IgpsProtocol.readRemainingTime())
-                            }
-                        }
-                    }
-                    LinkEvent.Disconnected -> {
-                        poller?.cancel()
-                        _state.update { it.copy(connected = false) }
-                    }
-                    is LinkEvent.Fragment -> assembler.push(event.bytes).forEach { frame ->
-                        IgpsProtocol.parseFrame(frame)?.let { update -> _state.update { applyReport(it, update) } }
-                    }
-                }
-            }
-        }
+        job = scope.launch { runLink() }
     }
 
-    fun stop() {
+    fun stop(): Unit = synchronized(commandLock) {
         job?.cancel()
         job = null
         _state.value = LightState()
+    }
+
+    /**
+     * Forces an immediate reconnect while the light is not connected: drops the current link flow (and its
+     * backoff) and collects a fresh one, which starts a new search right away. The last known state is kept.
+     * No-op while connected or stopped. Serialized with [start]/[stop] on [commandLock].
+     */
+    fun reconnectNow(): Unit = synchronized(commandLock) {
+        val previous = job ?: return
+        if (_state.value.connected) return
+        // Cancelled here, not in the new job, so a stop() before the new job runs still ends the old link.
+        previous.cancel()
+        job = scope.launch {
+            // Wait for the old flow's teardown before connecting again, so it can't close the new connection.
+            previous.join()
+            runLink()
+        }
+    }
+
+    private suspend fun runLink() = coroutineScope {
+        var poller: Job? = null
+        link.connect(address).collect { event ->
+            when (event) {
+                LinkEvent.Connected -> {
+                    assembler.reset()
+                    _state.update { it.copy(connected = true) }
+                    refreshAll()
+                    poller?.cancel()
+                    poller = launch {
+                        while (true) {
+                            delay(pollIntervalMs)
+                            link.send(IgpsProtocol.readBattery())
+                            link.send(IgpsProtocol.readRemainingTime())
+                        }
+                    }
+                }
+                LinkEvent.Disconnected -> {
+                    poller?.cancel()
+                    _state.update { it.copy(connected = false) }
+                }
+                is LinkEvent.Fragment -> assembler.push(event.bytes).forEach { frame ->
+                    IgpsProtocol.parseFrame(frame)?.let { update -> _state.update { applyReport(it, update) } }
+                }
+            }
+        }
     }
 
     /**

@@ -27,7 +27,11 @@ class LightSessionTest {
         private val sendLock = Any()
         val sent = mutableListOf<String>()
         var accepting = true
-        override fun connect(address: String): Flow<LinkEvent> = events
+        var connectCalls = 0
+        override fun connect(address: String): Flow<LinkEvent> {
+            connectCalls++
+            return events
+        }
         override fun send(frame: ByteArray): Boolean {
             if (accepting) synchronized(sendLock) { sent += Hex.encode(frame) }
             return accepting
@@ -144,6 +148,37 @@ class LightSessionTest {
         link.sent.clear()
         advanceTimeBy(180_000)
         assertEquals(emptyList<String>(), link.sent)
+    }
+
+    @Test
+    fun `reconnect now restarts the link while disconnected`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        link.events.tryEmit(LinkEvent.Fragment(respBattery87))
+        runCurrent()
+        assertEquals(1, link.connectCalls)
+
+        session.reconnectNow() // connected: nothing to do
+        runCurrent()
+        assertEquals(1, link.connectCalls)
+
+        link.events.tryEmit(LinkEvent.Disconnected)
+        runCurrent()
+        session.reconnectNow()
+        runCurrent()
+        assertEquals(2, link.connectCalls)
+        assertFalse(session.state.value.connected)
+        assertEquals(87, session.state.value.batteryPercent) // last known state is kept
+
+        // The fresh link flow is the one being collected now.
+        link.events.tryEmit(LinkEvent.Connected)
+        runCurrent()
+        assertTrue(session.state.value.connected)
+
+        session.stop()
+        session.reconnectNow() // stopped: nothing to do
+        runCurrent()
+        assertEquals(2, link.connectCalls)
     }
 
     @Test
