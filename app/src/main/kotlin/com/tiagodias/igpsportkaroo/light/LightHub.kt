@@ -1,6 +1,6 @@
 package com.tiagodias.igpsportkaroo.light
 
-/** The active light session, shared by the extension, the ride field, bonus actions and ControlActivity (same process). */
+/** The active light session, shared by the extension, the ride field, bonus actions and the app page (same process). */
 object LightHub {
     @Volatile
     var session: LightSession? = null
