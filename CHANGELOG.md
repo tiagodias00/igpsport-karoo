@@ -11,9 +11,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **OFF stays off.** When you switch the light off from the Karoo, it no longer turns itself back
   on when you move it. The light's **Auto sleep** is paused while the light is off, so moving it
-  can't wake it. Auto sleep comes back on by itself as soon as you pick a mode or switch the light
-  on with its own button. While it is paused, the app page says so under the **Auto sleep**
-  switch. If you change that switch yourself, your choice is kept.
+  can't wake it. The Karoo switches Auto sleep back on as soon as you pick a mode, or when it sees
+  you switch the light on with its own button. While it is paused, the app page says so under the
+  **Auto sleep** switch. If you change that switch yourself, your choice is kept.
+  - While the light is off like this, it stays in Bluetooth standby instead of sleeping, which uses
+    a little battery. If you use the light without the Karoo in the meantime, Auto sleep stays off
+    until the Karoo connects to it again.
 
 ## [0.2.0] - 2026-09-26
 
