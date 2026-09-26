@@ -62,9 +62,12 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
         /** On, and in a manual mode: the light keeps reporting its remembered mode while off or on auto. */
         private fun manual(state: LightState) = state.connected && !state.poweredOff && !state.autoLightOn
 
-        /** Unknown declared modes count as available, as before: the tap then uses whatever is known by then. */
-        private fun hasLevels(state: LightState, levels: (List<Int>) -> List<Int>) =
-            state.declaredModes.isEmpty() || levels(state.enabledModes).isNotEmpty()
+        /**
+         * Available when the light declares a level of the group, enabled or not ([LightState.steadyLevels]).
+         * Unknown declared modes count as available: the tap then uses whatever is known by then.
+         */
+        private fun hasLevels(state: LightState, levels: (LightState) -> List<Int>) =
+            state.declaredModes.isEmpty() || levels(state).isNotEmpty()
 
         private fun solid(state: LightState): Button {
             val level = state.steadyLevel
@@ -73,7 +76,7 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
                 label = "SOLID",
                 detail = level?.let(LightModes::label).orEmpty(),
                 active = manual(state) && state.mode in LightModes.STEADY,
-                available = hasLevels(state, LightModes::steadyLevels),
+                available = hasLevels(state, LightState::steadyLevels),
                 shortLabel = "SOL",
                 shortDetail = level?.let(LightModes::shortLabel).orEmpty(),
             )
@@ -86,7 +89,7 @@ data class FieldUi(val buttons: List<Button>, val footer: String, val connected:
                 label = "FLASH",
                 detail = level.orEmpty(),
                 active = manual(state) && state.mode in LightModes.FLASHING,
-                available = hasLevels(state, LightModes::flashLevels),
+                available = hasLevels(state, LightState::flashLevels),
                 shortLabel = "FLS",
                 shortDetail = level?.removePrefix("FL ").orEmpty(),
             )

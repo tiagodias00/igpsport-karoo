@@ -92,6 +92,10 @@ class FieldUiTest {
         assertEquals(listOf(true, false), FieldUi.from(steadyOnly).buttons.take(2).map { it.available })
         val flashOnly = LightState(connected = true, declaredModes = mapOf(4 to true))
         assertEquals(listOf(false, true), FieldUi.from(flashOnly).buttons.take(2).map { it.available })
+        // Declared but disabled still counts: selecting a disabled mode enables it first.
+        val flashDisabled = LightState(connected = true, declaredModes = mapOf(1 to true, 4 to false, 5 to false))
+        assertEquals(listOf(true, true), FieldUi.from(flashDisabled).buttons.take(2).map { it.available })
+        assertEquals("FL HI", FieldUi.from(flashDisabled).button(Kind.FLASH).detail)
 
         val noAuto = LightState(connected = true, smartConfigs = mapOf(SmartConfig.AUTO_SLEEP to SmartConfig.ON))
         assertFalse(FieldUi.from(noAuto).button(Kind.AUTO).available)

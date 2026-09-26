@@ -75,4 +75,19 @@ class LightStateTest {
         assertEquals(5, used.flashLevel)
         assertNull(LightState().steadyLevel)
     }
+
+    @Test
+    fun `levels fall back to the declared ones when none of a group is enabled`() {
+        // Flash modes ship disabled: FLASH still has levels, since selecting a disabled mode enables it first.
+        val flashDisabled = LightState(declaredModes = linkedMapOf(1 to true, 2 to true, 4 to false, 5 to false))
+        assertEquals(listOf(1, 2), flashDisabled.steadyLevels)
+        assertEquals(listOf(4, 5), flashDisabled.flashLevels)
+        assertEquals(4, flashDisabled.flashLevel)
+        // Once any level of a group is enabled, only the enabled ones are used (disabled ones stay untouched).
+        val oneFlashEnabled = LightState(declaredModes = linkedMapOf(1 to true, 64 to false, 4 to false, 5 to true))
+        assertEquals(listOf(1), oneFlashEnabled.steadyLevels)
+        assertEquals(listOf(5), oneFlashEnabled.flashLevels)
+        assertEquals(5, oneFlashEnabled.flashLevel)
+        assertEquals(emptyList<Int>(), LightState().flashLevels)
+    }
 }

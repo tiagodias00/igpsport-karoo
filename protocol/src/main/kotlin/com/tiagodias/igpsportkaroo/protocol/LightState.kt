@@ -28,11 +28,24 @@ data class LightState(
 
     val autoLightOn: Boolean get() = smartConfigs[SmartConfig.AUTO_LIGHT] == SmartConfig.ON
 
+    /**
+     * The steady levels SOLID cycles: the enabled ones, else the declared ones even though disabled (selecting
+     * a disabled mode enables it first), so a light that ships a group disabled still offers it. Once any level
+     * of a group is enabled, the disabled ones are left alone.
+     */
+    val steadyLevels: List<Int> get() = selectable(LightModes::steadyLevels)
+
+    /** The flash levels FLASH cycles, chosen like [steadyLevels]. */
+    val flashLevels: List<Int> get() = selectable(LightModes::flashLevels)
+
     /** The steady level SOLID goes to: the last one used, else the light's first. Null if none is known. */
-    val steadyLevel: Int? get() = lastSteadyMode ?: LightModes.steadyLevels(enabledModes).firstOrNull()
+    val steadyLevel: Int? get() = lastSteadyMode ?: steadyLevels.firstOrNull()
 
     /** The flash level FLASH goes to: the last one used, else the light's first. Null if none is known. */
-    val flashLevel: Int? get() = lastFlashMode ?: LightModes.flashLevels(enabledModes).firstOrNull()
+    val flashLevel: Int? get() = lastFlashMode ?: flashLevels.firstOrNull()
+
+    private fun selectable(levels: (List<Int>) -> List<Int>): List<Int> =
+        levels(enabledModes).ifEmpty { levels(declaredModes.keys.toList()) }
 
     fun apply(update: LightUpdate): LightState {
         val newMode = update.mode

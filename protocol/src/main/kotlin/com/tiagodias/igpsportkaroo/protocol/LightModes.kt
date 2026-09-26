@@ -45,9 +45,9 @@ object LightModes {
         return if (index < 0) cycle.first() else cycle[(index + 1) % cycle.size]
     }
 
-    /** The light's enabled steady modes, brightest first (VS1200S: HIGH, MID, LOW). */
-    fun steadyLevels(enabled: List<Int>): List<Int> = STEADY_RANK.filter { it in enabled }
+    /** The steady modes among [modes], brightest first (VS1200S: HIGH, MID, LOW). */
+    fun steadyLevels(modes: List<Int>): List<Int> = STEADY_RANK.filter { it in modes }
 
-    /** The light's enabled flash modes, in [FLASH_RANK] order. */
-    fun flashLevels(enabled: List<Int>): List<Int> = FLASH_RANK.filter { it in enabled }
+    /** The flash modes among [modes], in [FLASH_RANK] order. */
+    fun flashLevels(modes: List<Int>): List<Int> = FLASH_RANK.filter { it in modes }
 }

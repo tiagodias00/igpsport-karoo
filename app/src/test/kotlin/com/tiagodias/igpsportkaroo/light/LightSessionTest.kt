@@ -6,6 +6,7 @@ import com.tiagodias.igpsportkaroo.protocol.Crc8
 import com.tiagodias.igpsportkaroo.protocol.Hex
 import com.tiagodias.igpsportkaroo.protocol.IgpsProtocol
 import com.tiagodias.igpsportkaroo.protocol.LightModes
+import com.tiagodias.igpsportkaroo.protocol.ProtoWire
 import com.tiagodias.igpsportkaroo.protocol.SmartConfig
 import com.tiagodias.igpsportkaroo.ui.FieldUi
 import kotlinx.coroutines.CompletableDeferred
@@ -88,6 +89,21 @@ class LightSessionTest {
     // full (155 min) and dimmed (235 min) as auto light dims the output.
     private val vs1200sRunTime155 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF 9B 00 00 00 FF FF FF FF 36")
     private val vs1200sRunTime235 = Hex.decode("03 6A 05 FF 01 FF FF FF FF FF FF EB 00 00 00 FF FF FF FF 83")
+
+    /** A declared-modes read-back like the light's own, for [modes] (mode to enabled), in order. */
+    private fun declaredFrame(modes: Map<Int, Boolean>): ByteArray {
+        var payload = ProtoWire.varintField(1, 106) + ProtoWire.varintField(2, 2) + ProtoWire.varintField(3, 1)
+        modes.forEach { (mode, enabled) ->
+            var entry = ProtoWire.varintField(1, mode.toLong())
+            if (enabled) entry += ProtoWire.varintField(3, 1)
+            payload += ProtoWire.messageField(6, entry)
+        }
+        val header = Hex.decode("01 6A 01 FF 02 FF FF 00 00 00 01 FF FF FF FF FF FF FF FF 00")
+        header[8] = payload.size.toByte()
+        header[9] = Crc8.maxim(payload).toByte()
+        header[19] = Crc8.maxim(header, 0, 19).toByte()
+        return header + payload
+    }
 
     /** A mode state frame like the light's own (only the header CRC is computed). */
     private fun stateMode(mode: Int): ByteArray {
@@ -634,6 +650,25 @@ class LightSessionTest {
             listOf(4, 5, 1, 5).flatMap { listOf(hex(IgpsProtocol.setMode(it)), hex(IgpsProtocol.readCurrentMode())) },
             link.sent,
         )
+    }
+
+    @Test
+    fun `flash on a light whose flash modes are all disabled enables the first one`() = runTest {
+        val link = FakeLink()
+        val session = connectedSession(link)
+        report(link, declaredFrame(linkedMapOf(1 to true, 2 to true, 4 to false, 5 to false)), stateMode(1))
+        link.sent.clear()
+        assertTrue(session.selectFlash())
+        assertEquals(
+            listOf(
+                hex(IgpsProtocol.setModeEnabled(4, true)),
+                hex(IgpsProtocol.readSupportedModes()),
+                hex(IgpsProtocol.setMode(4)),
+                hex(IgpsProtocol.readCurrentMode()),
+            ),
+            link.sent,
+        )
+        assertEquals(4, session.state.value.mode)
     }
 
     @Test

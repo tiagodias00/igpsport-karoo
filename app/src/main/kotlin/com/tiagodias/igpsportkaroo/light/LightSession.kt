@@ -180,10 +180,10 @@ class LightSession(
     }
 
     /** SOLID: steady light, manual. Cycles the steady levels when already there, else returns to the last one. */
-    fun selectSolid(): Boolean = selectManual(LightModes.STEADY, LightModes::steadyLevels) { it.steadyLevel }
+    fun selectSolid(): Boolean = selectManual(LightModes.STEADY, LightState::steadyLevels) { it.steadyLevel }
 
     /** FLASH: the same as [selectSolid] for the flash levels. */
-    fun selectFlash(): Boolean = selectManual(LightModes.FLASHING, LightModes::flashLevels) { it.flashLevel }
+    fun selectFlash(): Boolean = selectManual(LightModes.FLASHING, LightState::flashLevels) { it.flashLevel }
 
     /** AUTO: switches auto light on, and the light itself on (current steady level) if we switched it off. */
     fun selectAuto(): Boolean = synchronized(commandLock) {
@@ -201,12 +201,12 @@ class LightSession(
      */
     private fun selectManual(
         group: Set<Int>,
-        levels: (List<Int>) -> List<Int>,
+        levels: (LightState) -> List<Int>,
         current: (LightState) -> Int?,
     ): Boolean = synchronized(commandLock) {
         val s = _state.value
         val cycling = !s.poweredOff && !s.autoLightOn && s.mode in group
-        val next = if (cycling) LightModes.next(s.mode, levels(s.enabledModes)) else null
+        val next = if (cycling) LightModes.next(s.mode, levels(s)) else null
         val target = next ?: current(s) ?: return false
         return selectManualMode(target)
     }
